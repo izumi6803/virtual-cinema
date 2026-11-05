@@ -9,11 +9,14 @@ export async function initDb() {
   try {
     const hostname = new URL(url).hostname;
     const isLocal = ['localhost', '127.0.0.1', '::1'].includes(hostname);
+    // Render internal URLs (dpg-...-a) are plaintext within the private network;
+    // external hosts (Neon, Supabase, *.render.com) require SSL.
+    const ssl = isLocal || !hostname.includes('.') ? undefined : { rejectUnauthorized: false };
     pool = new pg.Pool({
       connectionString: url,
       max: 2,
       idleTimeoutMillis: 30000,
-      ssl: isLocal ? undefined : { rejectUnauthorized: false },
+      ssl,
     });
     await pool.query(
       'CREATE TABLE IF NOT EXISTS app_state (key text PRIMARY KEY, value jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())',
