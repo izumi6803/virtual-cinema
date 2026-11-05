@@ -87,10 +87,14 @@ export default function TheatreList({ auth, onEnter }) {
           video: { kind: form.kind, src: form.src.trim() },
         },
       });
-      setNotice(`Đã tạo rạp ${data.theatre.id}.`);
+      if (data.theatre.status === 'pending_review') {
+        setNotice(`Rạp ${data.theatre.id} đang chờ quản trị viên duyệt phim.`);
+      } else {
+        setNotice(`Đã tạo rạp ${data.theatre.id}.`);
+      }
       setForm((previous) => ({ ...previous, name: '', description: '' }));
       await refresh();
-      joinTheatre(data.theatre.id);
+      if (data.theatre.status === 'open') joinTheatre(data.theatre.id);
     } catch (err) {
       setFormError({ message: err.message, reason: err.reason });
     } finally {
@@ -103,6 +107,22 @@ export default function TheatreList({ auth, onEnter }) {
     try {
       await api(`/api/theatres/${theatre.id}`, { method: 'PATCH', token, body: { status } });
       setNotice(status === 'closed' ? 'Đã đóng rạp.' : 'Đã mở lại rạp.');
+      refresh();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function appealTheatre(theatre) {
+    const reason = window.prompt(`Lý do khiếu nại cho rạp "${theatre.name}":`);
+    if (reason == null) return;
+    try {
+      await api(`/api/theatres/${theatre.id}/appeal`, {
+        method: 'POST',
+        token,
+        body: { reason },
+      });
+      setNotice('Đã gửi khiếu nại. Rạp sẽ được quản trị viên xem lại.');
       refresh();
     } catch (err) {
       setError(err.message);
@@ -223,18 +243,26 @@ export default function TheatreList({ auth, onEnter }) {
                       <span
                         className={`badge ${theatre.visibility === 'private' ? 'badge--private' : ''} ${
                           theatre.status === 'closed' ? 'badge--closed' : ''
+                        } ${theatre.status === 'pending_review' ? 'badge--pending' : ''} ${
+                          theatre.status === 'rejected' ? 'badge--rejected' : ''
                         }`}
                       >
-                        {theatre.status === 'closed'
-                          ? 'Đã đóng'
-                          : theatre.visibility === 'private'
-                            ? 'Riêng tư'
-                            : 'Công khai'}
+                        {theatre.status === 'pending_review'
+                          ? 'Chờ duyệt'
+                          : theatre.status === 'rejected'
+                            ? 'Bị từ chối'
+                            : theatre.status === 'closed'
+                              ? 'Đã đóng'
+                              : theatre.visibility === 'private'
+                                ? 'Riêng tư'
+                                : 'Công khai'}
                       </span>
                     </header>
 
                     <p className="theatre-card__desc">
-                      {theatre.description || 'Không có mô tả.'}
+                      {theatre.status === 'pending_review'
+                        ? `Đang chờ quản trị viên duyệt${theatre.moderation?.reason ? ` — ${theatre.moderation.reason}` : ''}.`
+                        : theatre.description || 'Không có mô tả.'}
                     </p>
 
                     <footer>
@@ -247,25 +275,34 @@ export default function TheatreList({ auth, onEnter }) {
                       </div>
 
                       <div className="theatre-card__actions">
+                        {isOwner && (theatre.status === 'open' || theatre.status === 'closed') ? (
+                          <button
+                            type="button"
+                            className="card-btn"
+                            onClick={() =>
+                              updateStatus(theatre, theatre.status === 'open' ? 'closed' : 'open')
+                            }
+                          >
+                            {theatre.status === 'open' ? 'Đóng' : 'Mở'}
+                          </button>
+                        ) : null}
+                        {isOwner && theatre.status === 'rejected' ? (
+                          <button
+                            type="button"
+                            className="card-btn"
+                            onClick={() => appealTheatre(theatre)}
+                          >
+                            Khiếu nại
+                          </button>
+                        ) : null}
                         {isOwner ? (
-                          <>
-                            <button
-                              type="button"
-                              className="card-btn"
-                              onClick={() =>
-                                updateStatus(theatre, theatre.status === 'open' ? 'closed' : 'open')
-                              }
-                            >
-                              {theatre.status === 'open' ? 'Đóng' : 'Mở'}
-                            </button>
-                            <button
-                              type="button"
-                              className="card-btn card-btn--danger"
-                              onClick={() => removeTheatre(theatre)}
-                            >
-                              Xoá
-                            </button>
-                          </>
+                          <button
+                            type="button"
+                            className="card-btn card-btn--danger"
+                            onClick={() => removeTheatre(theatre)}
+                          >
+                            Xoá
+                          </button>
                         ) : null}
                         <button
                           type="button"

@@ -1351,6 +1351,18 @@ button {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.badge--pending {
+  color: #ffd39a;
+  border-color: rgba(240, 180, 106, 0.32);
+  background: rgba(240, 180, 106, 0.1);
+}
+
+.badge--rejected {
+  color: #ffb1b1;
+  border-color: rgba(255, 110, 110, 0.32);
+  background: rgba(255, 80, 80, 0.1);
+}
+
 .card-btn {
   padding: 6px 10px;
   border: 1px solid var(--line);

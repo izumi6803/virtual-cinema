@@ -123,6 +123,23 @@ export default function AdminView({ auth }) {
     }
   }
 
+  async function reviewTheatre(theatre, approve) {
+    setBusy(`theatre:${theatre.id}`);
+    setError('');
+    try {
+      await api(`/api/admin/theatres/${theatre.id}/review`, {
+        method: 'POST',
+        token,
+        body: { approve },
+      });
+      await refresh();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy('');
+    }
+  }
+
   const stats = live || overview?.stats;
   const users = overview?.users || [];
   const theatres = overview?.theatres || [];
@@ -227,30 +244,59 @@ export default function AdminView({ auth }) {
                       <td>{theatre.owner.name}</td>
                       <td>{theatre.visibility === 'private' ? 'Riêng tư' : 'Công khai'}</td>
                       <td>
-                        <span className={`state ${theatre.status === 'open' ? 'state--live' : ''}`}>
-                          {theatre.status === 'open' ? 'Mở' : 'Đóng'}
-                        </span>
+                        {theatre.status === 'pending_review' ? (
+                          <span className="state state--host">Chờ duyệt</span>
+                        ) : theatre.status === 'rejected' ? (
+                          <span className="state state--muted">Từ chối</span>
+                        ) : (
+                          <span className={`state ${theatre.status === 'open' ? 'state--live' : ''}`}>
+                            {theatre.status === 'open' ? 'Mở' : 'Đóng'}
+                          </span>
+                        )}
                       </td>
                       <td>{theatre.online}</td>
                       <td>
-                        <button
-                          type="button"
-                          className="card-btn"
-                          disabled={busy === `theatre:${theatre.id}`}
-                          onClick={() =>
-                            theatreAction(theatre, theatre.status === 'open' ? 'closed' : 'open')
-                          }
-                        >
-                          {theatre.status === 'open' ? 'Đóng' : 'Mở'}
-                        </button>
-                        <button
-                          type="button"
-                          className="card-btn card-btn--danger"
-                          disabled={busy === `theatre:${theatre.id}`}
-                          onClick={() => theatreAction(theatre, 'delete')}
-                        >
-                          Xoá
-                        </button>
+                        {theatre.status === 'pending_review' ? (
+                          <>
+                            <button
+                              type="button"
+                              className="card-btn card-btn--join"
+                              disabled={busy === `theatre:${theatre.id}`}
+                              onClick={() => reviewTheatre(theatre, true)}
+                            >
+                              Duyệt
+                            </button>
+                            <button
+                              type="button"
+                              className="card-btn card-btn--danger"
+                              disabled={busy === `theatre:${theatre.id}`}
+                              onClick={() => reviewTheatre(theatre, false)}
+                            >
+                              Từ chối
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              className="card-btn"
+                              disabled={busy === `theatre:${theatre.id}`}
+                              onClick={() =>
+                                theatreAction(theatre, theatre.status === 'open' ? 'closed' : 'open')
+                              }
+                            >
+                              {theatre.status === 'open' ? 'Đóng' : 'Mở'}
+                            </button>
+                            <button
+                              type="button"
+                              className="card-btn card-btn--danger"
+                              disabled={busy === `theatre:${theatre.id}`}
+                              onClick={() => theatreAction(theatre, 'delete')}
+                            >
+                              Xoá
+                            </button>
+                          </>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -271,6 +317,7 @@ export default function AdminView({ auth }) {
                     <th>Tên</th>
                     <th>Email</th>
                     <th>Vai trò</th>
+                    <th>Strikes</th>
                     <th>Trạng thái</th>
                     <th>Online</th>
                     <th>Đăng ký</th>
@@ -287,6 +334,7 @@ export default function AdminView({ auth }) {
                           {person.role === 'admin' ? 'Admin' : 'Người dùng'}
                         </span>
                       </td>
+                      <td>{person.strikes || 0}</td>
                       <td>
                         <span className={`state ${person.banned ? 'state--muted' : 'state--live'}`}>
                           {person.banned ? 'Đã khoá' : 'Bình thường'}

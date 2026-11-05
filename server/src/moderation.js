@@ -77,7 +77,7 @@ async function openAiCheck(text) {
         .filter(([, flagged]) => flagged)
         .map(([category]) => category);
       return {
-        verdict: 'blocked',
+        verdict: 'flagged',
         provider: 'openai',
         reason: `OpenAI gắn cờ: ${categories.join(', ') || 'nội dung không phù hợp'}.`,
       };
@@ -99,9 +99,9 @@ export async function moderateFilm({ name, description, src }) {
   const term = localTerms().find((item) => containsTerm(normalized, item));
   if (term) {
     return {
-      verdict: 'blocked',
+      verdict: 'flagged',
       provider: 'local',
-      reason: `Tên phim hoặc mô tả chứa từ khoá bị cấm ("${term}").`,
+      reason: `Tên phim hoặc mô tả chứa từ khoá nghi vấn ("${term}").`,
     };
   }
 

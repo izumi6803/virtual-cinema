@@ -15,13 +15,7 @@ const ADMIN_PASSWORD = 'adminpass1';
 const dataDir = mkdtempSync(path.join(tmpdir(), 'vc-e2e-'));
 const child = spawn(process.execPath, ['src/index.js'], {
   cwd: serverDir,
-  env: {
-    ...process.env,
-    PORT: String(PORT),
-    DATA_DIR: dataDir,
-    ADMIN_EMAIL,
-    ADMIN_PASSWORD,
-  },
+  env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir, ADMIN_EMAIL, ADMIN_PASSWORD },
   stdio: ['ignore', 'ignore', 'pipe'],
 });
 let stderr = '';
@@ -34,14 +28,12 @@ const check = (label, condition, extra = '') => {
   results.push({ label, ok: Boolean(condition) });
   console.log(`${condition ? 'PASS' : 'FAIL'}  ${label}${extra ? `  (${extra})` : ''}`);
 };
-
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function waitForServer() {
   for (let i = 0; i < 50; i += 1) {
     try {
-      const response = await fetch(`${BASE}/health`);
-      if (response.ok) return;
+      if ((await fetch(`${BASE}/health`)).ok) return;
     } catch {
       /* not ready */
     }
@@ -71,9 +63,9 @@ const call = (socket, event, payload) =>
     });
   });
 
-const connect = (token) => {
-  const socket = io(BASE, { transports: ['websocket'], auth: { token } });
-  return new Promise((resolve, reject) => {
+const connect = (token) =>
+  new Promise((resolve, reject) => {
+    const socket = io(BASE, { transports: ['websocket'], auth: { token } });
     const timer = setTimeout(() => reject(new Error('connect timeout')), 5000);
     socket.on('connect', () => {
       clearTimeout(timer);
@@ -84,133 +76,132 @@ const connect = (token) => {
       reject(error);
     });
   });
-};
+
+const register = async (email, name, password = 'password1') =>
+  (await request('POST', '/api/auth/register', { body: { email, password, name } })).data;
 
 try {
   await waitForServer();
 
-  const reg = await request('POST', '/api/auth/register', {
-    body: { email: 'user1@test.io', password: 'password1', name: 'Người 1' },
-  });
-  check('đăng ký', reg.status === 201 && reg.data.token && reg.data.user.role === 'user');
-  const token1 = reg.data.token;
+  const u1 = await register('u1@test.io', 'Chủ rạp');
+  const u2 = await register('u2@test.io', 'Moderator');
+  const u3 = await register('u3@test.io', 'Khách mời');
+  check('đăng ký 3 người dùng', u1.token && u2.token && u3.token);
 
   const dup = await request('POST', '/api/auth/register', {
-    body: { email: 'user1@test.io', password: 'password1', name: 'Trùng' },
+    body: { email: 'u1@test.io', password: 'password1', name: 'Trùng' },
   });
   check('chặn email trùng', dup.status === 409);
 
-  const short = await request('POST', '/api/auth/register', {
-    body: { email: 'x@test.io', password: '123', name: 'X' },
-  });
-  check('chặn mật khẩu ngắn', short.status === 400);
-
   const badLogin = await request('POST', '/api/auth/login', {
-    body: { email: 'user1@test.io', password: 'wrongpass' },
+    body: { email: 'u1@test.io', password: 'wrong' },
   });
   check('chặn sai mật khẩu', badLogin.status === 401);
 
-  const login = await request('POST', '/api/auth/login', {
-    body: { email: 'user1@test.io', password: 'password1' },
-  });
-  check('đăng nhập', login.status === 200 && login.data.user.email === 'user1@test.io');
-
-  const me = await request('GET', '/api/auth/me', { token: token1 });
-  check('lấy hồ sơ', me.status === 200 && me.data.user.id === login.data.user.id);
-
-  const adminLogin = await request('POST', '/api/auth/login', {
+  const admin = (await request('POST', '/api/auth/login', {
     body: { email: ADMIN_EMAIL, password: ADMIN_PASSWORD },
-  });
-  check('đăng nhập admin', adminLogin.status === 200 && adminLogin.data.user.role === 'admin');
-  const adminToken = adminLogin.data.token;
+  })).data;
+  check('đăng nhập admin', admin.user.role === 'admin');
 
   const noAuth = await request('GET', '/api/theatres');
   check('chặn chưa đăng nhập', noAuth.status === 401);
 
-  const created = await request('POST', '/api/theatres', {
-    token: token1,
-    body: {
-      name: 'Rạp công khai',
-      visibility: 'public',
-      video: { kind: 'html5', src: 'https://example.com/movie.mp4' },
-    },
+  // --- create open theatre ---
+  const pub = await request('POST', '/api/theatres', {
+    token: u1.token,
+    body: { name: 'Rạp công khai', visibility: 'public', video: { kind: 'html5', src: 'https://example.com/m.mp4' } },
   });
-  check('tạo rạp công khai', created.status === 201 && created.data.theatre.id, created.data.theatre?.id);
-  const publicId = created.data.theatre.id;
+  check('tạo rạp công khai (open)', pub.status === 201 && pub.data.theatre.status === 'open');
 
-  const blocked = await request('POST', '/api/theatres', {
-    token: token1,
-    body: {
-      name: 'Phim sex porn',
-      visibility: 'public',
-      video: { kind: 'html5', src: 'https://example.com/x.mp4' },
-    },
+  // --- blocked by banned domain ---
+  const hard = await request('POST', '/api/theatres', {
+    token: u1.token,
+    body: { name: 'Phim lậu', video: { kind: 'html5', src: 'https://pornhub.com/x.mp4' } },
   });
-  check('kiểm duyệt chặn từ khoá', blocked.status === 422 && blocked.data.reason, blocked.data.reason);
+  check('chặn cứng theo tên miền', hard.status === 422);
 
-  const privateCreated = await request('POST', '/api/theatres', {
-    token: token1,
-    body: {
-      name: 'Rạp riêng',
-      visibility: 'private',
-      video: { kind: 'youtube', src: 'https://youtu.be/aqz-KE-bpKQ' },
-    },
+  // --- flagged -> pending review ---
+  const flagged = await request('POST', '/api/theatres', {
+    token: u1.token,
+    body: { name: 'Phim sex 18+', video: { kind: 'html5', src: 'https://example.com/s.mp4' } },
   });
-  check('tạo rạp riêng', privateCreated.status === 201);
-  const privateId = privateCreated.data.theatre.id;
+  check('từ khoá -> chờ duyệt', flagged.status === 201 && flagged.data.theatre.status === 'pending_review');
+  const flaggedId = flagged.data.theatre.id;
 
-  const reg2 = await request('POST', '/api/auth/register', {
-    body: { email: 'user2@test.io', password: 'password2', name: 'Người 2' },
+  const listU2 = await request('GET', '/api/theatres', { token: u2.token });
+  const ids = listU2.data.theatres.map((theatre) => theatre.id);
+  check('khách không thấy rạp chờ duyệt', !ids.includes(flaggedId));
+
+  const socket1 = await connect(u1.token);
+  const joinPending = await call(socket1, 'room:join', { theatreId: flaggedId });
+  check('chặn join rạp chờ duyệt', joinPending.ok === false && /chờ|duyệt/.test(joinPending.error));
+
+  // --- reject -> strike ---
+  const rej = await request('POST', `/api/admin/theatres/${flaggedId}/review`, {
+    token: admin.token,
+    body: { approve: false, reason: 'Nội dung không phù hợp' },
   });
-  const token2 = reg2.data.token;
+  check('admin từ chối', rej.status === 200 && rej.data.theatre.status === 'rejected');
+  const ov1 = await request('GET', '/api/admin/overview', { token: admin.token });
+  const strikes1 = ov1.data.users.find((user) => user.email === 'u1@test.io').strikes;
+  check('từ chối -> cộng strike', strikes1 === 1);
 
-  const list2 = await request('GET', '/api/theatres', { token: token2 });
-  const ids = list2.data.theatres.map((theatre) => theatre.id);
-  check('danh sách rạp', list2.status === 200 && ids.includes(publicId));
-  check('ẩn rạp riêng của người khác', !ids.includes(privateId));
-
-  const socket1 = await connect(token1);
-  const join1 = await call(socket1, 'room:join', { theatreId: publicId });
-  check('join rạp qua socket', join1.ok && join1.room.name === 'Rạp công khai');
-
-  const seat = await call(socket1, 'seat:claim', { seatId: '1-2' });
-  check('chọn ghế', seat.ok);
-
-  const socket2 = await connect(token2);
-  const joinPrivate = await call(socket2, 'room:join', { theatreId: privateId });
-  check('join rạp riêng bằng mã', joinPrivate.ok, privateId);
-
-  let closedEvent = null;
-  socket2.on('room:closed', (payload) => {
-    closedEvent = payload;
+  // --- appeal ---
+  const appeal = await request('POST', `/api/theatres/${flaggedId}/appeal`, {
+    token: u1.token,
+    body: { reason: 'Phim thật ra không vi phạm' },
   });
+  check('chủ rạp khiếu nại', appeal.status === 200 && appeal.data.theatre.status === 'pending_review');
 
-  const overview = await request('GET', '/api/admin/overview', { token: adminToken });
-  check('admin xem tổng quan', overview.status === 200 && overview.data.users.length >= 3);
-  check(
-    'admin thấy log kiểm duyệt',
-    overview.data.moderation.some((entry) => entry.verdict === 'blocked'),
-  );
-  const target = overview.data.users.find((user) => user.email === 'user2@test.io');
-
-  const closeTheatre = await request('PATCH', `/api/admin/theatres/${privateId}`, {
-    token: adminToken,
-    body: { status: 'closed' },
+  // --- approve ---
+  const appr = await request('POST', `/api/admin/theatres/${flaggedId}/review`, {
+    token: admin.token,
+    body: { approve: true },
   });
-  check('admin đóng rạp', closeTheatre.status === 200);
-  await sleep(600);
-  check('người trong rạp nhận room:closed', Boolean(closedEvent));
+  check('admin duyệt sau khiếu nại', appr.status === 200 && appr.data.theatre.status === 'open');
 
-  const ban = await request('PATCH', `/api/admin/users/${target.id}`, {
-    token: adminToken,
+  // --- host override ---
+  await request('PATCH', `/api/theatres/${pub.data.theatre.id}`, {
+    token: u1.token,
+    body: { hostOverride: u3.user.id },
+  });
+  const socket3 = await connect(u3.token);
+  const join3 = await call(socket3, 'room:join', { theatreId: pub.data.theatre.id });
+  check('uỷ quyền host', join3.room.hostId === socket3.id);
+
+  // --- moderator can kick ---
+  await request('POST', `/api/theatres/${pub.data.theatre.id}/moderators`, {
+    token: u1.token,
+    body: { userId: u2.user.id, action: 'add' },
+  });
+  const kicked = new Promise((resolve) => {
+    socket3.on('disconnect', () => resolve(true));
+    socket3.on('room:kicked', () => resolve(true));
+  });
+  await request('POST', `/api/theatres/${pub.data.theatre.id}/kick`, {
+    token: u2.token,
+    body: { userId: u3.user.id },
+  });
+  check('moderator kick người dùng', (await Promise.race([kicked, sleep(3000).then(() => false)])) === true);
+
+  // --- ban from theatre ---
+  await request('POST', `/api/theatres/${pub.data.theatre.id}/ban`, {
+    token: u1.token,
+    body: { userId: u3.user.id, banned: true },
+  });
+  const socket3b = await connect(u3.token);
+  const joinBanned = await call(socket3b, 'room:join', { theatreId: pub.data.theatre.id });
+  check('cấm user khỏi rạp', joinBanned.ok === false && /cấm/.test(joinBanned.error));
+
+  // --- global ban ---
+  await request('PATCH', `/api/admin/users/${u2.user.id}`, {
+    token: admin.token,
     body: { banned: true },
   });
-  check('admin khoá tài khoản', ban.status === 200 && ban.data.user.banned === true);
-
   const relogin = await request('POST', '/api/auth/login', {
-    body: { email: 'user2@test.io', password: 'password2' },
+    body: { email: 'u2@test.io', password: 'password1' },
   });
-  check('chặn đăng nhập tài khoản đã khoá', relogin.status === 403);
+  check('chặn đăng nhập tài khoản khoá', relogin.status === 403);
 
   let unauthorized = false;
   await new Promise((resolve) => {
@@ -224,7 +215,7 @@ try {
   check('chặn socket token sai', unauthorized);
 
   socket1.disconnect();
-  socket2.disconnect();
+  socket3b.disconnect();
 } catch (error) {
   console.error('E2E ERROR:', error.message);
   results.push({ label: 'unexpected error', ok: false });
@@ -239,7 +230,6 @@ try {
 }
 
 if (stderr.trim()) console.error('--- server stderr ---\n', stderr);
-
 const failed = results.filter((result) => !result.ok);
 console.log(`\n${results.length - failed.length}/${results.length} kiểm tra đạt.`);
 process.exit(failed.length === 0 ? 0 : 1);

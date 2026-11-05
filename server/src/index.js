@@ -63,6 +63,7 @@ function seedAdmin() {
     passwordHash: hashPassword(ADMIN_PASSWORD),
     role: 'admin',
     banned: false,
+    strikes: 0,
     createdAt: Date.now(),
     lastLoginAt: 0,
   });
@@ -132,9 +133,9 @@ function newTheatreId() {
   return id;
 }
 
-function theatreView(theatre) {
+function theatreView(theatre, full = false) {
   const owner = store.findUserById(theatre.ownerId);
-  return {
+  const view = {
     id: theatre.id,
     name: theatre.name,
     description: theatre.description || '',
@@ -144,12 +145,19 @@ function theatreView(theatre) {
     owner: owner ? { id: owner.id, name: owner.name } : { id: theatre.ownerId, name: 'Không rõ' },
     online: rooms.count(theatre.id),
     createdAt: theatre.createdAt,
+    hostOverride: theatre.hostOverride || null,
+    appeal: theatre.appeal || null,
     moderation: {
       verdict: theatre.moderation?.verdict || 'allowed',
       provider: theatre.moderation?.provider || 'local',
       reason: theatre.moderation?.reason || '',
     },
   };
+  if (full) {
+    view.moderators = theatre.moderators || [];
+    view.bannedUsers = theatre.bannedUsers || [];
+  }
+  return view;
 }
 
 function listTheatresFor(user) {
@@ -173,6 +181,19 @@ function closeLiveTheatre(theatreId, reason) {
 function disconnectUser(userId) {
   for (const socket of io.sockets.sockets.values()) {
     if (socket.data.userId === userId) socket.disconnect(true);
+  }
+}
+
+function kickUserFromTheatre(theatreId, accountId) {
+  const room = rooms.getRoom(theatreId);
+  if (!room) return;
+  for (const [socketId, member] of room.users) {
+    if (member.accountId !== accountId) continue;
+    const socket = io.sockets.sockets.get(socketId);
+    if (socket) {
+      socket.emit('room:kicked', { reason: 'Bạn đã bị đưa ra khỏi rạp.' });
+      socket.disconnect(true);
+    }
   }
 }
 
@@ -231,6 +252,7 @@ app.post(
       passwordHash: hashPassword(password),
       role: 'user',
       banned: false,
+      strikes: 0,
       createdAt: Date.now(),
       lastLoginAt: Date.now(),
     };
@@ -316,8 +338,12 @@ app.post(
       ownerId: req.user.id,
       visibility,
       video: { kind, src },
-      status: 'open',
+      status: verdict.verdict === 'flagged' ? 'pending_review' : 'open',
       moderation: verdict,
+      moderators: [],
+      bannedUsers: [],
+      hostOverride: null,
+      appeal: null,
       createdAt: Date.now(),
     };
     store.addTheatre(theatre);
@@ -331,10 +357,19 @@ app.patch('/api/theatres/:id', requireAuth, (req, res) => {
   if (theatre.ownerId !== req.user.id && req.user.role !== 'admin') {
     return res.status(403).json({ error: 'Bạn không phải chủ rạp.' });
   }
-  const status = req.body?.status === 'closed' ? 'closed' : 'open';
-  store.updateTheatre(theatre.id, { status });
-  if (status === 'closed') closeLiveTheatre(theatre.id, 'Rạp đã đóng.');
-  res.json({ ok: true, theatre: theatreView(theatre) });
+
+  const patch = {};
+  if (req.body?.status === 'closed' || req.body?.status === 'open') patch.status = req.body.status;
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'hostOverride')) {
+    patch.hostOverride =
+      req.body.hostOverride && typeof req.body.hostOverride === 'string'
+        ? req.body.hostOverride
+        : null;
+  }
+
+  store.updateTheatre(theatre.id, patch);
+  if (patch.status === 'closed') closeLiveTheatre(theatre.id, 'Rạp đã đóng.');
+  res.json({ ok: true, theatre: theatreView(theatre, true) });
 });
 
 app.delete('/api/theatres/:id', requireAuth, (req, res) => {
@@ -346,6 +381,92 @@ app.delete('/api/theatres/:id', requireAuth, (req, res) => {
   closeLiveTheatre(theatre.id, 'Rạp đã bị xoá.');
   store.deleteTheatre(theatre.id);
   res.json({ ok: true });
+});
+
+function canModerate(theatre, user) {
+  return (
+    user.role === 'admin' ||
+    theatre.ownerId === user.id ||
+    Array.isArray(theatre.moderators) && theatre.moderators.includes(user.id)
+  );
+}
+
+app.post('/api/theatres/:id/moderators', requireAuth, (req, res) => {
+  const theatre = store.findTheatre(String(req.params.id || '').toUpperCase());
+  if (!theatre) return res.status(404).json({ error: 'Không tìm thấy rạp.' });
+  if (theatre.ownerId !== req.user.id) {
+    return res.status(403).json({ error: 'Chỉ chủ rạp được bổ nhiệm điều phối viên.' });
+  }
+  const userId = typeof req.body?.userId === 'string' ? req.body.userId : '';
+  const action = req.body?.action;
+  if (!userId || (action !== 'add' && action !== 'remove')) {
+    return res.status(400).json({ error: 'Thiếu userId hoặc hành động.' });
+  }
+  const moderators = new Set(theatre.moderators || []);
+  if (action === 'add') moderators.add(userId);
+  else moderators.delete(userId);
+  store.updateTheatre(theatre.id, { moderators: [...moderators] });
+  res.json({ ok: true, theatre: theatreView(theatre, true) });
+});
+
+app.post('/api/theatres/:id/ban', requireAuth, (req, res) => {
+  const theatre = store.findTheatre(String(req.params.id || '').toUpperCase());
+  if (!theatre) return res.status(404).json({ error: 'Không tìm thấy rạp.' });
+  if (!canModerate(theatre, req.user)) {
+    return res.status(403).json({ error: 'Bạn không có quyền cấm người khỏi rạp.' });
+  }
+  const userId = typeof req.body?.userId === 'string' ? req.body.userId : '';
+  if (!userId) return res.status(400).json({ error: 'Thiếu userId.' });
+  const banned = req.body?.banned !== false;
+  const bannedUsers = new Set(theatre.bannedUsers || []);
+  if (banned) {
+    bannedUsers.add(userId);
+    kickUserFromTheatre(theatre.id, userId);
+  } else {
+    bannedUsers.delete(userId);
+  }
+  store.updateTheatre(theatre.id, { bannedUsers: [...bannedUsers] });
+  res.json({ ok: true, theatre: theatreView(theatre, true) });
+});
+
+app.post('/api/theatres/:id/kick', requireAuth, (req, res) => {
+  const theatre = store.findTheatre(String(req.params.id || '').toUpperCase());
+  if (!theatre) return res.status(404).json({ error: 'Không tìm thấy rạp.' });
+  if (!canModerate(theatre, req.user)) {
+    return res.status(403).json({ error: 'Bạn không có quyền đưa người ra khỏi rạp.' });
+  }
+  const userId = typeof req.body?.userId === 'string' ? req.body.userId : '';
+  if (!userId) return res.status(400).json({ error: 'Thiếu userId.' });
+  kickUserFromTheatre(theatre.id, userId);
+  res.json({ ok: true });
+});
+
+app.post('/api/theatres/:id/appeal', requireAuth, (req, res) => {
+  const theatre = store.findTheatre(String(req.params.id || '').toUpperCase());
+  if (!theatre) return res.status(404).json({ error: 'Không tìm thấy rạp.' });
+  if (theatre.ownerId !== req.user.id) {
+    return res.status(403).json({ error: 'Chỉ chủ rạp được khiếu nại.' });
+  }
+  if (theatre.status !== 'rejected') {
+    return res.status(400).json({ error: 'Rạp chưa bị từ chối.' });
+  }
+  const reason = cleanText(req.body?.reason, 300);
+  store.updateTheatre(theatre.id, {
+    status: 'pending_review',
+    appeal: { reason, at: Date.now() },
+  });
+  store.logModeration({
+    id: randomUUID(),
+    at: Date.now(),
+    userId: req.user.id,
+    email: req.user.email,
+    name: theatre.name,
+    src: theatre.video.src,
+    verdict: 'appealed',
+    provider: 'admin',
+    reason: reason || 'Chủ rạp khiếu nại.',
+  });
+  res.json({ ok: true, theatre: theatreView(theatre, true) });
 });
 
 /* ---------------------------------------------------------------- Admin */
@@ -360,12 +481,13 @@ app.get('/api/admin/overview', requireAuth, requireAdmin, (req, res) => {
   const users = store.listUsers().map((user) => ({
     ...publicUser(user),
     online: onlineUserIds.has(user.id),
+    strikes: user.strikes || 0,
   }));
 
   const theatres = store.listTheatres().map((theatre) => {
     const owner = store.findUserById(theatre.ownerId);
     return {
-      ...theatreView(theatre),
+      ...theatreView(theatre, true),
       ownerEmail: owner?.email || '',
       video: { kind: theatre.video.kind },
     };
@@ -377,6 +499,46 @@ app.get('/api/admin/overview', requireAuth, requireAdmin, (req, res) => {
     theatres,
     moderation: [...store.data.moderation].reverse().slice(0, 100),
   });
+});
+
+app.post('/api/admin/theatres/:id/review', requireAuth, requireAdmin, (req, res) => {
+  const theatre = store.findTheatre(String(req.params.id || '').toUpperCase());
+  if (!theatre) return res.status(404).json({ error: 'Không tìm thấy rạp.' });
+  if (theatre.status !== 'pending_review') {
+    return res.status(400).json({ error: 'Rạp không ở trạng thái chờ duyệt.' });
+  }
+  const approve = req.body?.approve !== false;
+  const reason = cleanText(req.body?.reason, 300);
+
+  if (approve) {
+    store.updateTheatre(theatre.id, { status: 'open', appeal: null });
+  } else {
+    store.updateTheatre(theatre.id, { status: 'rejected', appeal: null });
+    const owner = store.findUserById(theatre.ownerId);
+    if (owner) {
+      const strikes = (owner.strikes || 0) + 1;
+      const patch = { strikes };
+      if (strikes >= 3) {
+        patch.banned = true;
+        store.deleteSessionsForUser(owner.id);
+        disconnectUser(owner.id);
+      }
+      store.updateUser(owner.id, patch);
+    }
+  }
+
+  store.logModeration({
+    id: randomUUID(),
+    at: Date.now(),
+    userId: req.user.id,
+    email: req.user.email,
+    name: theatre.name,
+    src: theatre.video.src,
+    verdict: approve ? 'approved' : 'rejected',
+    provider: 'admin',
+    reason: reason || (approve ? 'Quản trị viên duyệt.' : 'Quản trị viên từ chối.'),
+  });
+  res.json({ ok: true, theatre: theatreView(theatre, true) });
 });
 
 app.patch('/api/admin/users/:id', requireAuth, requireAdmin, (req, res) => {
@@ -444,6 +606,12 @@ io.on('connection', (socket) => {
     const user = socket.data.user;
     const theatre = store.findTheatre(String(payload?.theatreId || '').toUpperCase());
     if (!theatre) return reply(ack, { ok: false, error: 'Không tìm thấy rạp này.' });
+    if (theatre.status === 'pending_review') {
+      return reply(ack, { ok: false, error: 'Rạp đang chờ quản trị viên duyệt.' });
+    }
+    if (theatre.status === 'rejected') {
+      return reply(ack, { ok: false, error: 'Rạp đã bị từ chối kiểm duyệt.' });
+    }
     if (theatre.status !== 'open') {
       return reply(ack, { ok: false, error: 'Rạp đang đóng.' });
     }

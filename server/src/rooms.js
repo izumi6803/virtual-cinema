@@ -67,10 +67,17 @@ export class RoomManager {
     return this.rooms.get(theatreId)?.users.size || 0;
   }
 
+  getRoom(theatreId) {
+    return this.rooms.get(theatreId) || null;
+  }
+
   join(theatre, user, socketId) {
     const room = this.ensure(theatre);
     if (room.users.has(socketId)) return { room };
     if (room.users.size >= MAX_ROOM_SIZE) return { error: 'Rạp đã đủ người.' };
+    if (Array.isArray(theatre.bannedUsers) && theatre.bannedUsers.includes(user.id)) {
+      return { error: 'Bạn đã bị cấm khỏi rạp này.' };
+    }
 
     room.users.set(socketId, {
       id: socketId,
@@ -83,7 +90,9 @@ export class RoomManager {
       muted: false,
       joinedAt: Date.now(),
     });
-    if (!room.hostId || user.id === room.ownerId) room.hostId = socketId;
+    if (!room.hostId || user.id === room.ownerId || user.id === theatre.hostOverride) {
+      room.hostId = socketId;
+    }
     room.lastActive = Date.now();
     this.userRooms.set(socketId, room.id);
     return { room };

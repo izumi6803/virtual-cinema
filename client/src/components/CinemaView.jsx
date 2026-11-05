@@ -121,6 +121,15 @@ export default function CinemaView({ initialRoom, onLeave }) {
   }, [onLeave]);
 
   useEffect(() => {
+    const onKicked = (payload) => {
+      setToast(payload?.reason || 'Bạn đã bị đưa ra khỏi rạp.');
+      setTimeout(onLeave, 1200);
+    };
+    socket.on('room:kicked', onKicked);
+    return () => socket.off('room:kicked', onKicked);
+  }, [onLeave]);
+
+  useEffect(() => {
     const scene = new CinemaScene(canvasRef.current, {
       onSeatClick: (seatId) => {
         socket.emit('seat:claim', { seatId }, (response) => {
