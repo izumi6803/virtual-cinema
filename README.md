@@ -45,7 +45,7 @@ npm start
 | --- | --- | --- |
 | `PORT` | `3001` | Cổng API. |
 | `DATA_DIR` | `server/data` | Nơi lưu `db.json` (tài khoản, rạp, session) và `stats.json`. |
-| `ADMIN_EMAIL` | `admin@local` | Email tài khoản quản trị (tạo khi khởi động nếu chưa có). |
+| `ADMIN_EMAIL` | `admin@example.com` | Email tài khoản quản trị (tạo khi khởi động nếu chưa có). |
 | `ADMIN_PASSWORD` | `admin12345` | Mật khẩu quản trị mặc định — **đổi trước khi deploy**. |
 | `OPENAI_API_KEY` | *(trống)* | Nếu có, kiểm duyệt dùng Moderation API; nếu không dùng blocklist local. |
 | `MODERATION_TERMS` | *(danh sách sẵn)* | Danh sách từ khoá cấm, phân cách bằng dấu phẩy. |
@@ -64,7 +64,7 @@ $env:ADMIN_EMAIL="admin@tenmien.com"; $env:ADMIN_PASSWORD="mat-khau-manh"; $env:
 4. Chọn ghế; chủ rạp điều khiển phim.
 5. Chat chỉ hiện với người ngồi gần; bật micro để nói (người nghe không cần bật).
 
-Tài khoản quản trị mặc định (dev): `admin@local` / `admin12345` — đổi qua `ADMIN_EMAIL`/`ADMIN_PASSWORD`.
+Tài khoản quản trị mặc định (dev): `admin@example.com` / `admin12345` — đổi qua `ADMIN_EMAIL`/`ADMIN_PASSWORD`.
 
 ## Kiến trúc
 

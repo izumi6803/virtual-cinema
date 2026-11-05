@@ -22,7 +22,7 @@ import { RoomManager } from './rooms.js';
 import { Store } from './store.js';
 
 const PORT = Number(process.env.PORT) || 3001;
-const ADMIN_EMAIL = cleanEmail(process.env.ADMIN_EMAIL || 'admin@local') || 'admin@local';
+const ADMIN_EMAIL = cleanEmail(process.env.ADMIN_EMAIL || 'admin@example.com') || 'admin@example.com';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin12345';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const clientDist = path.resolve(here, '../../client/dist');
