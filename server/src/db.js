@@ -7,11 +7,13 @@ export async function initDb() {
   const url = process.env.DATABASE_URL;
   if (!url) return false;
   try {
+    const hostname = new URL(url).hostname;
+    const isLocal = ['localhost', '127.0.0.1', '::1'].includes(hostname);
     pool = new pg.Pool({
       connectionString: url,
       max: 2,
       idleTimeoutMillis: 30000,
-      ssl: /render\.com$/.test(new URL(url).hostname) ? { rejectUnauthorized: false } : undefined,
+      ssl: isLocal ? undefined : { rejectUnauthorized: false },
     });
     await pool.query(
       'CREATE TABLE IF NOT EXISTS app_state (key text PRIMARY KEY, value jsonb NOT NULL, updated_at timestamptz NOT NULL DEFAULT now())',
