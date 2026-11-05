@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: virtual-cinema
+    runtime: docker
+    plan: free
+    region: singapore
+    healthCheckPath: /health
+    envVars:
+      - key: ADMIN_EMAIL
+        value: admin@example.com
