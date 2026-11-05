@@ -16,6 +16,7 @@ import {
   SESSION_TTL,
   verifyPassword,
 } from './auth.js';
+import { initDb, isDbConnected, loadSnapshot, saveSnapshot } from './db.js';
 import { Metrics } from './metrics.js';
 import { moderateFilm, moderationProvider } from './moderation.js';
 import { RoomManager } from './rooms.js';
@@ -71,8 +72,6 @@ function seedAdmin() {
     `[admin] Đã tạo tài khoản quản trị ${ADMIN_EMAIL}. Đổi ADMIN_EMAIL/ADMIN_PASSWORD trước khi deploy.`,
   );
 }
-
-seedAdmin();
 
 const authAttempts = new Map();
 function rateLimited(key, max = 20, windowMs = 10 * 60 * 1000) {
@@ -741,12 +740,28 @@ const adminPusher = setInterval(() => {
 }, 2000);
 adminPusher.unref?.();
 
+const dbFlusher = setInterval(() => {
+  if (store.dbDirty) {
+    store.dbDirty = false;
+    saveSnapshot('store', store.data).catch(() => {});
+  }
+}, 3000);
+dbFlusher.unref?.();
+
 if (fs.existsSync(indexFile)) {
   app.get('*', (req, res) => res.sendFile(indexFile));
 }
 
-server.listen(PORT, () => {
-  console.log(`Virtual Cinema API đang chạy tại http://localhost:${PORT}`);
-  console.log(`Trang quản trị: http://localhost:${PORT}/admin`);
-  console.log(`Dữ liệu: ${dataDir}`);
-});
+(async () => {
+  await initDb();
+  if (isDbConnected()) {
+    const snapshot = await loadSnapshot('store');
+    if (snapshot) store.loadData(snapshot);
+  }
+  seedAdmin();
+  server.listen(PORT, () => {
+    console.log(`Virtual Cinema API đang chạy tại http://localhost:${PORT}`);
+    console.log(`Trang quản trị: http://localhost:${PORT}/admin`);
+    console.log(`Dữ liệu: ${dataDir}${isDbConnected() ? ' (+ Postgres)' : ''}`);
+  });
+})();

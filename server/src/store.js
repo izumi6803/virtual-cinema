@@ -16,6 +16,7 @@ export class Store {
   constructor(file) {
     this.file = file;
     this.data = EMPTY();
+    this.dbDirty = false;
     this.load();
   }
 
@@ -31,7 +32,13 @@ export class Store {
     }
   }
 
+  loadData(data) {
+    this.data = normalize(data);
+    this.pruneSessions();
+  }
+
   save() {
+    this.dbDirty = true;
     try {
       fs.mkdirSync(path.dirname(this.file), { recursive: true });
       const temp = `${this.file}.tmp`;

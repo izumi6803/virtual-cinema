@@ -45,6 +45,7 @@ npm start
 | --- | --- | --- |
 | `PORT` | `3001` | Cổng API. |
 | `DATA_DIR` | `server/data` | Nơi lưu `db.json` (tài khoản, rạp, session) và `stats.json`. |
+| `DATABASE_URL` | *(trống)* | Chuỗi kết nối Postgres. Nếu có, server lưu snapshot trạng thái vào bảng `app_state` (giữ dữ liệu qua các lần deploy); không có thì dùng file JSON. |
 | `ADMIN_EMAIL` | `admin@example.com` | Email tài khoản quản trị (tạo khi khởi động nếu chưa có). |
 | `ADMIN_PASSWORD` | `admin12345` | Mật khẩu quản trị mặc định — **đổi trước khi deploy**. |
 | `OPENAI_API_KEY` | *(trống)* | Nếu có, kiểm duyệt dùng Moderation API; nếu không dùng blocklist local. |
@@ -116,7 +117,7 @@ Bộ test e2e tự dựng server trên cổng 3100 với `DATA_DIR` tạm, kiể
 
 ## Giới hạn đã biết
 
-- **Lưu trữ JSON**: phù hợp demo/quy mô nhỏ; chưa có rate-limit chi tiết, xác minh email hay khôi phục mật khẩu. Token trong `localStorage` (dễ bị XSS).
+- **Lưu trữ JSON**: phù hợp demo/quy mô nhỏ; chưa có rate-limit chi tiết, xác minh email hay khôi phục mật khẩu. Token trong `localStorage` (dễ bị XSS). Có thể cấu hình `DATABASE_URL` (Postgres) để lưu snapshot trạng thái và giữ dữ liệu qua các lần deploy.
 - **CORS video**: MP4 phải có CORS (đặt file vào `client/public/` để cùng origin). HLS cần `hls.js` trên Chrome.
 - **YouTube**: overlay hình chữ nhật, có thể cần bấm “Bấm để phát phim” do autoplay.
 - **Voice**: chỉ STUN (chưa TURN), mesh phù hợp ≤ ~10 người; cần HTTPS trên LAN.
