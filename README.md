@@ -113,7 +113,14 @@ Mọi lần kiểm tra đều ghi vào log để admin xem ở `/admin`.
 npm test
 ```
 
-Bộ test e2e tự dựng server trên cổng 3100 với `DATA_DIR` tạm, kiểm tra 23 bước: đăng ký/đăng nhập, chặn email trùng, kiểm duyệt chặn từ khoá, quyền vào rạp, join bằng mã, admin tổng quan/khoá tài khoản/đóng rạp, chặn socket không hợp lệ.
+Bộ test e2e tự dựng server trên cổng 3100 với `DATA_DIR` tạm, kiểm tra 19 bước: đăng ký/đăng nhập, chặn email trùng, kiểm duyệt (chặn tên miền / chờ duyệt từ khoá), quyền vào rạp, chờ duyệt/khiếu nại/duyệt lại, strike, uỷ quyền host, moderator kick, ban theo rạp, admin khoá tài khoản, socket không hợp lệ.
+
+## CI/CD
+
+- `.github/workflows/deploy.yml`: mỗi push/PR chạy e2e; khi push vào `main` và test pass thì trigger deploy Render qua API.
+- Cần secret `RENDER_API_KEY` (GitHub → **Settings → Secrets and variables → Actions**). Service ID đã cấu hình sẵn trong workflow.
+- Nếu dùng workflow này, nên tắt **Auto-Deploy** trên Render (Settings → Deploy) để tránh deploy 2 lần.
+- CLI Render: cài bằng `winget install render.cli` hoặc tải binary từ https://github.com/render-oss/cli/releases; đặt `RENDER_API_KEY` rồi dùng `render deploys create <service-id> --confirm`.
 
 ## Giới hạn đã biết
 
