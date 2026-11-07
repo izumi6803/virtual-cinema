@@ -92,6 +92,12 @@ async function openAiCheck(text) {
   }
 }
 
+export function screenText(text) {
+  const normalized = normalize(text);
+  const term = localTerms().find((item) => containsTerm(normalized, item));
+  return term || null;
+}
+
 export async function moderateFilm({ name, description, src }) {
   const text = [name, description, src].filter(Boolean).join('\n');
   const normalized = normalize(text);

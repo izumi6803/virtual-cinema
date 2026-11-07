@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { effectiveTime } from '../lib/clock.js';
 import { seatDistance, seatLabel } from '../lib/layout.js';
+import { api } from '../net/api.js';
 import { socket } from '../net/socket.js';
 import { VoiceChat } from '../net/voice.js';
 import { CinemaScene } from '../three/CinemaScene.js';
@@ -10,7 +11,7 @@ import ControlBar from './ControlBar.jsx';
 import { Icon } from './Icons.jsx';
 import VoiceStatus from './VoiceStatus.jsx';
 
-export default function CinemaView({ initialRoom, onLeave }) {
+export default function CinemaView({ initialRoom, token, onLeave }) {
   const [room, setRoom] = useState(initialRoom);
   const [messages, setMessages] = useState([]);
   const [chatOpen, setChatOpen] = useState(
@@ -336,7 +337,26 @@ export default function CinemaView({ initialRoom, onLeave }) {
   }
 
   function sendChat(text) {
-    socket.emit('chat:send', { text });
+    socket.emit('chat:send', { text }, (response) => {
+      if (response && !response.ok) {
+        setToast(response.error || 'Không gửi được tin nhắn.');
+      }
+    });
+  }
+
+  async function reportTheatre() {
+    const reason = window.prompt('Mô tả vi phạm (gửi tới quản trị viên):');
+    if (!reason) return;
+    try {
+      await api(`/api/theatres/${room.id}/report`, {
+        method: 'POST',
+        token,
+        body: { reason },
+      });
+      setToast('Đã gửi báo cáo. Cảm ơn bạn.');
+    } catch (err) {
+      setToast(err.message);
+    }
   }
 
   function nudgePlayback() {
@@ -377,6 +397,10 @@ export default function CinemaView({ initialRoom, onLeave }) {
           <button type="button" className="icon-btn" onClick={copyCode}>
             <Icon name="copy" size={15} />
             {copied ? 'Đã chép' : room.id}
+          </button>
+          <button type="button" className="icon-btn" onClick={reportTheatre} title="Báo cáo rạp">
+            <Icon name="flag" size={15} />
+            Báo cáo
           </button>
           <button type="button" className="icon-btn icon-btn--danger" onClick={handleLeave}>
             <Icon name="exit" size={16} />

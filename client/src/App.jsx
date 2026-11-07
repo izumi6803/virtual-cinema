@@ -10,6 +10,6 @@ export default function App() {
 
   if (auth.loading) return <div className="boot">Đang mở rạp…</div>;
   if (!auth.user) return <AuthScreen auth={auth} />;
-  if (room) return <CinemaView initialRoom={room} onLeave={() => setRoom(null)} />;
+  if (room) return <CinemaView initialRoom={room} token={auth.token} onLeave={() => setRoom(null)} />;
   return <TheatreList auth={auth} onEnter={setRoom} />;
 }

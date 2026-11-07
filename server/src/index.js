@@ -18,7 +18,7 @@ import {
 } from './auth.js';
 import { initDb, isDbConnected, loadSnapshot, saveSnapshot } from './db.js';
 import { Metrics } from './metrics.js';
-import { moderateFilm, moderationProvider } from './moderation.js';
+import { moderateFilm, moderationProvider, screenText } from './moderation.js';
 import { RoomManager } from './rooms.js';
 import { Store } from './store.js';
 
@@ -196,6 +196,38 @@ function kickUserFromTheatre(theatreId, accountId) {
   }
 }
 
+const MAX_THEATRES_PER_USER = 5;
+const CHAT_BUCKETS = new Map();
+const JOIN_BUCKETS = new Map();
+
+function tooManyAttempts(map, key, max, windowMs) {
+  const now = Date.now();
+  const list = (map.get(key) || []).filter((timestamp) => now - timestamp < windowMs);
+  list.push(now);
+  map.set(key, list);
+  return list.length > max;
+}
+
+function addAudit(actor, action, detail = {}) {
+  const entry = {
+    id: randomUUID(),
+    at: Date.now(),
+    actorId: actor?.id || null,
+    actorEmail: actor?.email || 'system',
+    action,
+    ...detail,
+  };
+  store.data.audit.push(entry);
+  if (store.data.audit.length > 500) store.data.audit = store.data.audit.slice(-500);
+  store.save();
+  return entry;
+}
+
+function isMuted(theatre, accountId) {
+  const until = theatre.mutedUsers?.[accountId];
+  return Boolean(until && until > Date.now());
+}
+
 function buildAdminStats() {
   const live = rooms.adminSnapshot();
   const flat = live.flatMap((room) => room.users.map((user) => ({ ...user, theatreId: room.id })));
@@ -291,6 +323,43 @@ app.get('/api/auth/me', requireAuth, (req, res) => {
   res.json({ user: publicUser(req.user) });
 });
 
+app.delete('/api/account', requireAuth, (req, res) => {
+  const user = store.findUserById(req.user.id);
+  if (!user) return res.status(404).json({ error: 'Không tìm thấy tài khoản.' });
+  if (!verifyPassword(String(req.body?.password ?? ''), user.passwordHash)) {
+    return res.status(400).json({ error: 'Mật khẩu không đúng.' });
+  }
+
+  for (const theatre of store.data.theatres.filter((item) => item.ownerId === user.id)) {
+    closeLiveTheatre(theatre.id, 'Chủ rạp đã xoá tài khoản.');
+  }
+  store.data.theatres = store.data.theatres.filter((item) => item.ownerId !== user.id);
+  for (const entry of store.data.audit) {
+    if (entry.actorId === user.id) entry.actorEmail = 'deleted-user';
+  }
+  for (const report of store.data.reports) {
+    if (report.reporterId === user.id) report.reporterEmail = 'deleted-user';
+  }
+  store.deleteSessionsForUser(user.id);
+  store.data.users = store.data.users.filter((item) => item.id !== user.id);
+  store.save();
+  disconnectUser(user.id);
+  res.json({ ok: true });
+});
+
+app.get('/api/account/export', requireAuth, (req, res) => {
+  const user = store.findUserById(req.user.id);
+  if (!user) return res.status(404).json({ error: 'Không tìm thấy tài khoản.' });
+  res.json({
+    user: publicUser(user),
+    theatres: store.data.theatres
+      .filter((theatre) => theatre.ownerId === user.id)
+      .map((theatre) => theatreView(theatre, true)),
+    audit: store.data.audit.filter((entry) => entry.actorId === user.id),
+    reports: store.data.reports.filter((report) => report.reporterId === user.id),
+  });
+});
+
 /* --------------------------------------------------------------- Theatres */
 
 app.get('/api/theatres', requireAuth, (req, res) => {
@@ -309,6 +378,11 @@ app.post(
 
     if (name.length < 2) return res.status(400).json({ error: 'Tên rạp cần ít nhất 2 ký tự.' });
     if (!src) return res.status(400).json({ error: 'Thiếu đường dẫn phim.' });
+    if (!req.user || store.data.theatres.filter((t) => t.ownerId === req.user.id).length >= MAX_THEATRES_PER_USER) {
+      return res
+        .status(400)
+        .json({ error: `Mỗi tài khoản chỉ được mở tối đa ${MAX_THEATRES_PER_USER} rạp.` });
+    }
 
     const verdict = await moderateFilm({ name, description, src });
     store.logModeration({
@@ -341,11 +415,13 @@ app.post(
       moderation: verdict,
       moderators: [],
       bannedUsers: [],
+      mutedUsers: {},
       hostOverride: null,
       appeal: null,
       createdAt: Date.now(),
     };
     store.addTheatre(theatre);
+    addAudit(req.user, 'theatre_create', { theatreId: theatre.id, status: theatre.status });
     res.status(201).json({ theatre: theatreView(theatre) });
   }),
 );
@@ -368,6 +444,17 @@ app.patch('/api/theatres/:id', requireAuth, (req, res) => {
 
   store.updateTheatre(theatre.id, patch);
   if (patch.status === 'closed') closeLiveTheatre(theatre.id, 'Rạp đã đóng.');
+  if (patch.status) {
+    addAudit(req.user, patch.status === 'closed' ? 'theatre_close' : 'theatre_open', {
+      theatreId: theatre.id,
+    });
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'hostOverride')) {
+    addAudit(req.user, 'host_delegate', {
+      theatreId: theatre.id,
+      hostOverride: patch.hostOverride,
+    });
+  }
   res.json({ ok: true, theatre: theatreView(theatre, true) });
 });
 
@@ -378,6 +465,7 @@ app.delete('/api/theatres/:id', requireAuth, (req, res) => {
     return res.status(403).json({ error: 'Bạn không phải chủ rạp.' });
   }
   closeLiveTheatre(theatre.id, 'Rạp đã bị xoá.');
+  addAudit(req.user, 'theatre_delete', { theatreId: theatre.id, name: theatre.name });
   store.deleteTheatre(theatre.id);
   res.json({ ok: true });
 });
@@ -405,6 +493,10 @@ app.post('/api/theatres/:id/moderators', requireAuth, (req, res) => {
   if (action === 'add') moderators.add(userId);
   else moderators.delete(userId);
   store.updateTheatre(theatre.id, { moderators: [...moderators] });
+  addAudit(req.user, action === 'add' ? 'moderator_add' : 'moderator_remove', {
+    theatreId: theatre.id,
+    userId,
+  });
   res.json({ ok: true, theatre: theatreView(theatre, true) });
 });
 
@@ -425,6 +517,10 @@ app.post('/api/theatres/:id/ban', requireAuth, (req, res) => {
     bannedUsers.delete(userId);
   }
   store.updateTheatre(theatre.id, { bannedUsers: [...bannedUsers] });
+  addAudit(req.user, banned ? 'theatre_ban' : 'theatre_unban', {
+    theatreId: theatre.id,
+    userId,
+  });
   res.json({ ok: true, theatre: theatreView(theatre, true) });
 });
 
@@ -437,6 +533,7 @@ app.post('/api/theatres/:id/kick', requireAuth, (req, res) => {
   const userId = typeof req.body?.userId === 'string' ? req.body.userId : '';
   if (!userId) return res.status(400).json({ error: 'Thiếu userId.' });
   kickUserFromTheatre(theatre.id, userId);
+  addAudit(req.user, 'theatre_kick', { theatreId: theatre.id, userId });
   res.json({ ok: true });
 });
 
@@ -465,7 +562,54 @@ app.post('/api/theatres/:id/appeal', requireAuth, (req, res) => {
     provider: 'admin',
     reason: reason || 'Chủ rạp khiếu nại.',
   });
+  addAudit(req.user, 'theatre_appeal', { theatreId: theatre.id, reason });
   res.json({ ok: true, theatre: theatreView(theatre, true) });
+});
+
+app.post('/api/theatres/:id/mute', requireAuth, (req, res) => {
+  const theatre = store.findTheatre(String(req.params.id || '').toUpperCase());
+  if (!theatre) return res.status(404).json({ error: 'Không tìm thấy rạp.' });
+  if (!canModerate(theatre, req.user)) {
+    return res.status(403).json({ error: 'Bạn không có quyền tắt chat.' });
+  }
+  const userId = typeof req.body?.userId === 'string' ? req.body.userId : '';
+  if (!userId) return res.status(400).json({ error: 'Thiếu userId.' });
+  const minutes = Math.max(0, Math.min(1440, Number(req.body?.minutes) || 0));
+  const mutes = { ...(theatre.mutedUsers || {}) };
+  if (minutes === 0) delete mutes[userId];
+  else mutes[userId] = Date.now() + minutes * 60 * 1000;
+  store.updateTheatre(theatre.id, { mutedUsers: mutes });
+  addAudit(req.user, minutes === 0 ? 'unmute' : 'mute', {
+    theatreId: theatre.id,
+    userId,
+    minutes,
+  });
+  res.json({ ok: true, theatre: theatreView(theatre, true) });
+});
+
+app.post('/api/theatres/:id/report', requireAuth, (req, res) => {
+  const theatre = store.findTheatre(String(req.params.id || '').toUpperCase());
+  if (!theatre) return res.status(404).json({ error: 'Không tìm thấy rạp.' });
+  const reason = cleanText(req.body?.reason, 500);
+  if (!reason) return res.status(400).json({ error: 'Nhập lý do báo cáo.' });
+
+  const report = {
+    id: randomUUID(),
+    at: Date.now(),
+    theatreId: theatre.id,
+    theatreName: theatre.name,
+    reporterId: req.user.id,
+    reporterEmail: req.user.email,
+    targetUserId:
+      typeof req.body?.targetUserId === 'string' ? req.body.targetUserId : null,
+    reason,
+    status: 'open',
+  };
+  store.data.reports.push(report);
+  if (store.data.reports.length > 300) store.data.reports = store.data.reports.slice(-300);
+  store.save();
+  addAudit(req.user, 'report_create', { theatreId: theatre.id, reportId: report.id });
+  res.status(201).json({ ok: true, report });
 });
 
 /* ---------------------------------------------------------------- Admin */
@@ -497,7 +641,23 @@ app.get('/api/admin/overview', requireAuth, requireAdmin, (req, res) => {
     users,
     theatres,
     moderation: [...store.data.moderation].reverse().slice(0, 100),
+    reports: [...store.data.reports].reverse().slice(0, 100),
+    audit: [...store.data.audit].reverse().slice(0, 200),
   });
+});
+
+app.patch('/api/admin/reports/:id', requireAuth, requireAdmin, (req, res) => {
+  const report = store.data.reports.find((item) => item.id === req.params.id);
+  if (!report) return res.status(404).json({ error: 'Không tìm thấy báo cáo.' });
+  const status = req.body?.status === 'dismissed' ? 'dismissed' : 'resolved';
+  report.status = status;
+  report.resolvedAt = Date.now();
+  report.resolvedBy = req.user.email;
+  store.save();
+  addAudit(req.user, status === 'resolved' ? 'report_resolve' : 'report_dismiss', {
+    reportId: report.id,
+  });
+  res.json({ ok: true, report });
 });
 
 app.post('/api/admin/theatres/:id/review', requireAuth, requireAdmin, (req, res) => {
@@ -537,6 +697,10 @@ app.post('/api/admin/theatres/:id/review', requireAuth, requireAdmin, (req, res)
     provider: 'admin',
     reason: reason || (approve ? 'Quản trị viên duyệt.' : 'Quản trị viên từ chối.'),
   });
+  addAudit(req.user, approve ? 'review_approve' : 'review_reject', {
+    theatreId: theatre.id,
+    reason,
+  });
   res.json({ ok: true, theatre: theatreView(theatre, true) });
 });
 
@@ -561,6 +725,11 @@ app.patch('/api/admin/users/:id', requireAuth, requireAdmin, (req, res) => {
     store.deleteSessionsForUser(target.id);
     disconnectUser(target.id);
   }
+  addAudit(req.user, patch.banned === true ? 'user_ban' : patch.banned === false ? 'user_unban' : 'user_role', {
+    targetUserId: target.id,
+    targetEmail: target.email,
+    role: patch.role,
+  });
   res.json({ ok: true, user: publicUser(store.findUserById(target.id)) });
 });
 
@@ -570,6 +739,9 @@ app.patch('/api/admin/theatres/:id', requireAuth, requireAdmin, (req, res) => {
   const status = req.body?.status === 'closed' ? 'closed' : 'open';
   store.updateTheatre(theatre.id, { status });
   if (status === 'closed') closeLiveTheatre(theatre.id, 'Rạp đã bị quản trị viên đóng.');
+  addAudit(req.user, status === 'closed' ? 'admin_theatre_close' : 'admin_theatre_open', {
+    theatreId: theatre.id,
+  });
   res.json({ ok: true, theatre: theatreView(theatre) });
 });
 
@@ -577,6 +749,7 @@ app.delete('/api/admin/theatres/:id', requireAuth, requireAdmin, (req, res) => {
   const theatre = store.findTheatre(String(req.params.id || '').toUpperCase());
   if (!theatre) return res.status(404).json({ error: 'Không tìm thấy rạp.' });
   closeLiveTheatre(theatre.id, 'Rạp đã bị quản trị viên xoá.');
+  addAudit(req.user, 'admin_theatre_delete', { theatreId: theatre.id, name: theatre.name });
   store.deleteTheatre(theatre.id);
   res.json({ ok: true });
 });
@@ -602,6 +775,9 @@ io.on('connection', (socket) => {
   });
 
   socket.on('room:join', (payload, ack) => {
+    if (tooManyAttempts(JOIN_BUCKETS, socket.id, 20, 60000)) {
+      return reply(ack, { ok: false, error: 'Bạn thử vào rạp quá nhiều lần. Đợi một lát.' });
+    }
     const user = socket.data.user;
     const theatre = store.findTheatre(String(payload?.theatreId || '').toUpperCase());
     if (!theatre) return reply(ack, { ok: false, error: 'Không tìm thấy rạp này.' });
@@ -641,13 +817,34 @@ io.on('connection', (socket) => {
     reply(ack, { ok: true });
   });
 
-  socket.on('chat:send', (payload) => {
+  socket.on('chat:send', (payload, ack) => {
     const room = rooms.roomOf(socket.id);
-    if (!room) return;
-    const text = String(payload?.text ?? '').replace(/\s+/g, ' ').trim().slice(0, 500);
-    if (!text) return;
+    if (!room) return reply(ack, { ok: false, error: 'Bạn chưa ở trong rạp.' });
     const user = room.users.get(socket.id);
-    if (!user) return;
+    if (!user) return reply(ack, { ok: false, error: 'Không tìm thấy người dùng.' });
+    const theatre = store.findTheatre(room.theatreId);
+    if (!theatre) return reply(ack, { ok: false, error: 'Rạp không tồn tại.' });
+
+    if (isMuted(theatre, user.accountId)) {
+      return reply(ack, { ok: false, error: 'Bạn đang bị tắt chat trong rạp này.' });
+    }
+
+    if (tooManyAttempts(CHAT_BUCKETS, socket.id, 8, 10000)) {
+      const mutes = { ...(theatre.mutedUsers || {}), [user.accountId]: Date.now() + 60000 };
+      store.updateTheatre(theatre.id, { mutedUsers: mutes });
+      addAudit(null, 'chat_automute', {
+        theatreId: theatre.id,
+        userId: user.accountId,
+        reason: 'spam',
+      });
+      return reply(ack, { ok: false, error: 'Bạn gửi quá nhanh — bị tắt chat 60 giây.' });
+    }
+
+    const text = String(payload?.text ?? '').replace(/\s+/g, ' ').trim().slice(0, 500);
+    if (!text) return reply(ack, { ok: false, error: 'Tin nhắn trống.' });
+    if (screenText(text)) {
+      return reply(ack, { ok: false, error: 'Tin nhắn chứa nội dung bị chặn.' });
+    }
 
     io.to(room.id).emit('chat:message', {
       id: `${socket.id}-${Date.now()}`,
@@ -657,6 +854,7 @@ io.on('connection', (socket) => {
       text,
       ts: Date.now(),
     });
+    reply(ack, { ok: true });
   });
 
   socket.on('voice:join', (payload, ack) => {
@@ -710,6 +908,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
+    CHAT_BUCKETS.delete(socket.id);
+    JOIN_BUCKETS.delete(socket.id);
     const result = rooms.leave(socket.id);
     if (!result || result.empty) return;
     io.to(result.room.id).emit('room:state', rooms.serialize(result.room));

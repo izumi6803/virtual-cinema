@@ -140,10 +140,81 @@ export default function AdminView({ auth }) {
     }
   }
 
+  async function muteUser(theatreId, userId, minutes) {
+    setBusy(`live:${theatreId}:${userId}`);
+    setError('');
+    try {
+      await api(`/api/theatres/${theatreId}/mute`, {
+        method: 'POST',
+        token,
+        body: { userId, minutes },
+      });
+      await refresh();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function kickUser(theatreId, userId) {
+    setBusy(`live:${theatreId}:${userId}`);
+    setError('');
+    try {
+      await api(`/api/theatres/${theatreId}/kick`, {
+        method: 'POST',
+        token,
+        body: { userId },
+      });
+      await refresh();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function banFromTheatre(theatreId, userId) {
+    if (!window.confirm('Cấm người này vào rạp?')) return;
+    setBusy(`live:${theatreId}:${userId}`);
+    setError('');
+    try {
+      await api(`/api/theatres/${theatreId}/ban`, {
+        method: 'POST',
+        token,
+        body: { userId, banned: true },
+      });
+      await refresh();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function resolveReport(report, status) {
+    setBusy(`report:${report.id}`);
+    setError('');
+    try {
+      await api(`/api/admin/reports/${report.id}`, {
+        method: 'PATCH',
+        token,
+        body: { status },
+      });
+      await refresh();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy('');
+    }
+  }
+
   const stats = live || overview?.stats;
   const users = overview?.users || [];
   const theatres = overview?.theatres || [];
   const moderation = overview?.moderation || [];
+  const reports = overview?.reports || [];
+  const audit = overview?.audit || [];
 
   return (
     <main className="admin">
@@ -307,6 +378,78 @@ export default function AdminView({ auth }) {
 
           <section className="panel">
             <header className="panel__head">
+              <h2>Đang trong rạp</h2>
+              <span>{stats.rooms.length} rạp có người</span>
+            </header>
+            {stats.rooms.length === 0 ? (
+              <p className="empty">Không có ai trong rạp.</p>
+            ) : (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Rạp</th>
+                      <th>Người</th>
+                      <th>Ghế</th>
+                      <th>Voice</th>
+                      <th>Hành động</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {stats.rooms.flatMap((room) =>
+                      room.users.map((person) => (
+                        <tr key={`${room.id}:${person.id}`}>
+                          <td>
+                            <code className="admin__code">{room.id}</code> {room.name}
+                          </td>
+                          <td>{person.name}</td>
+                          <td>{person.seatId || '—'}</td>
+                          <td>
+                            {person.speaking ? (
+                              <span className="state state--live">Đang nói</span>
+                            ) : person.voice ? (
+                              <span className="state">Đang nghe</span>
+                            ) : (
+                              <span className="state state--muted">Tắt</span>
+                            )}
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              className="card-btn"
+                              disabled={busy === `live:${room.id}:${person.accountId}`}
+                              onClick={() => muteUser(room.id, person.accountId, 10)}
+                            >
+                              Mute 10p
+                            </button>
+                            <button
+                              type="button"
+                              className="card-btn"
+                              disabled={busy === `live:${room.id}:${person.accountId}`}
+                              onClick={() => kickUser(room.id, person.accountId)}
+                            >
+                              Kick
+                            </button>
+                            <button
+                              type="button"
+                              className="card-btn card-btn--danger"
+                              disabled={busy === `live:${room.id}:${person.accountId}`}
+                              onClick={() => banFromTheatre(room.id, person.accountId)}
+                            >
+                              Ban
+                            </button>
+                          </td>
+                        </tr>
+                      )),
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+
+          <section className="panel">
+            <header className="panel__head">
               <h2>Người dùng</h2>
               <span>{users.length} tài khoản</span>
             </header>
@@ -416,6 +559,123 @@ export default function AdminView({ auth }) {
               </div>
             ) : (
               <p className="empty">Chưa có phim nào được kiểm tra.</p>
+            )}
+          </section>
+
+          <section className="panel">
+            <header className="panel__head">
+              <h2>Báo cáo</h2>
+              <span>{reports.length} báo cáo</span>
+            </header>
+            {reports.length ? (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Lúc</th>
+                      <th>Rạp</th>
+                      <th>Người gửi</th>
+                      <th>Lý do</th>
+                      <th>Trạng thái</th>
+                      <th>Hành động</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {reports.map((report) => (
+                      <tr key={report.id}>
+                        <td>{ago(report.at)}</td>
+                        <td>
+                          <code className="admin__code">{report.theatreId}</code> {report.theatreName}
+                        </td>
+                        <td>{report.reporterEmail}</td>
+                        <td>{report.reason}</td>
+                        <td>
+                          <span
+                            className={`state ${
+                              report.status === 'open' ? 'state--host' : 'state--muted'
+                            }`}
+                          >
+                            {report.status === 'open'
+                              ? 'Mới'
+                              : report.status === 'resolved'
+                                ? 'Đã xử lý'
+                                : 'Bỏ qua'}
+                          </span>
+                        </td>
+                        <td>
+                          {report.status === 'open' ? (
+                            <>
+                              <button
+                                type="button"
+                                className="card-btn"
+                                disabled={busy === `report:${report.id}`}
+                                onClick={() => resolveReport(report, 'resolved')}
+                              >
+                                Xử lý
+                              </button>
+                              <button
+                                type="button"
+                                className="card-btn"
+                                disabled={busy === `report:${report.id}`}
+                                onClick={() => resolveReport(report, 'dismissed')}
+                              >
+                                Bỏ qua
+                              </button>
+                            </>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="empty">Chưa có báo cáo.</p>
+            )}
+          </section>
+
+          <section className="panel">
+            <header className="panel__head">
+              <h2>Audit log</h2>
+              <span>{audit.length} sự kiện gần nhất</span>
+            </header>
+            {audit.length ? (
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Lúc</th>
+                      <th>Người thực hiện</th>
+                      <th>Hành động</th>
+                      <th>Chi tiết</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {audit.map((entry) => (
+                      <tr key={entry.id}>
+                        <td>{ago(entry.at)}</td>
+                        <td>{entry.actorEmail}</td>
+                        <td>
+                          <span className="state">{entry.action}</span>
+                        </td>
+                        <td className="admin__visitor">
+                          {Object.entries(entry)
+                            .filter(
+                              ([key]) =>
+                                !['id', 'at', 'actorId', 'actorEmail', 'action'].includes(key),
+                            )
+                            .map(([key, value]) => `${key}=${String(value).slice(0, 60)}`)
+                            .join(' · ')}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="empty">Chưa có hoạt động.</p>
             )}
           </section>
         </>

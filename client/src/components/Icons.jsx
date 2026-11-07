@@ -36,6 +36,12 @@ const paths = {
     </>
   ),
   chat: <path d="M4 5.5h16v11H9.5L4 20.5z" />,
+  flag: (
+    <>
+      <path d="M5 21V4" />
+      <path d="M5 4h11l-2 4 2 4H5" />
+    </>
+  ),
   copy: (
     <>
       <rect x="9" y="9" width="11" height="11" rx="2" />

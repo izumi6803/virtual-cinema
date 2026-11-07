@@ -1,7 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const EMPTY = () => ({ users: [], theatres: [], sessions: {}, moderation: [] });
+const EMPTY = () => ({
+  users: [],
+  theatres: [],
+  sessions: {},
+  moderation: [],
+  reports: [],
+  audit: [],
+});
 
 function normalize(data) {
   const next = { ...EMPTY(), ...(data && typeof data === 'object' ? data : {}) };
@@ -9,6 +16,8 @@ function normalize(data) {
   if (!Array.isArray(next.theatres)) next.theatres = [];
   if (!next.sessions || typeof next.sessions !== 'object') next.sessions = {};
   if (!Array.isArray(next.moderation)) next.moderation = [];
+  if (!Array.isArray(next.reports)) next.reports = [];
+  if (!Array.isArray(next.audit)) next.audit = [];
   return next;
 }
 

@@ -169,6 +169,28 @@ try {
   const join3 = await call(socket3, 'room:join', { theatreId: pub.data.theatre.id });
   check('uỷ quyền host', join3.room.hostId === socket3.id);
 
+  // --- chat moderation ---
+  const badChat = await call(socket3, 'chat:send', { text: 'noi dung porn' });
+  check('chat lọc từ khoá', badChat.ok === false);
+
+  await request('POST', `/api/theatres/${pub.data.theatre.id}/mute`, {
+    token: u1.token,
+    body: { userId: u3.user.id, minutes: 10 },
+  });
+  const mutedChat = await call(socket3, 'chat:send', { text: 'xin chào' });
+  check('chat bị mute', mutedChat.ok === false && /tắt chat/.test(mutedChat.error));
+  await request('POST', `/api/theatres/${pub.data.theatre.id}/mute`, {
+    token: u1.token,
+    body: { userId: u3.user.id, minutes: 0 },
+  });
+
+  // --- report ---
+  const report = await request('POST', `/api/theatres/${pub.data.theatre.id}/report`, {
+    token: u3.token,
+    body: { reason: 'Nội dung thử nghiệm' },
+  });
+  check('gửi báo cáo', report.status === 201);
+
   // --- moderator can kick ---
   await request('POST', `/api/theatres/${pub.data.theatre.id}/moderators`, {
     token: u1.token,
@@ -202,6 +224,36 @@ try {
     body: { email: 'u2@test.io', password: 'password1' },
   });
   check('chặn đăng nhập tài khoản khoá', relogin.status === 403);
+
+  const ov2 = await request('GET', '/api/admin/overview', { token: admin.token });
+  check('admin thấy báo cáo', ov2.data.reports.some((item) => item.id === report.data.report.id));
+  const resolve = await request('PATCH', `/api/admin/reports/${report.data.report.id}`, {
+    token: admin.token,
+    body: { status: 'resolved' },
+  });
+  check('xử lý báo cáo', resolve.status === 200);
+  check('audit log có sự kiện', ov2.data.audit.length > 0);
+
+  // --- account deletion (GDPR) ---
+  const u4 = await register('u4@test.io', 'Xoá tài khoản');
+  const u4Theatre = await request('POST', '/api/theatres', {
+    token: u4.token,
+    body: { name: 'Rạp tạm', video: { kind: 'html5', src: 'https://example.com/t.mp4' } },
+  });
+  const del = await request('DELETE', '/api/account', {
+    token: u4.token,
+    body: { password: 'password1' },
+  });
+  check('xoá tài khoản', del.status === 200);
+  const u4Login = await request('POST', '/api/auth/login', {
+    body: { email: 'u4@test.io', password: 'password1' },
+  });
+  check('tài khoản đã xoá không đăng nhập được', u4Login.status === 401);
+  const ov3 = await request('GET', '/api/admin/overview', { token: admin.token });
+  check(
+    'rạp của tài khoản đã xoá bị gỡ',
+    !ov3.data.theatres.some((item) => item.id === u4Theatre.data.theatre.id),
+  );
 
   let unauthorized = false;
   await new Promise((resolve) => {
