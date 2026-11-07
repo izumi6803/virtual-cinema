@@ -22,7 +22,11 @@ export default function TheatreList({ auth, onEnter }) {
     kind: 'html5',
     src: SAMPLE_MP4,
     visibility: 'public',
+    mature: false,
   });
+  const [accountMsg, setAccountMsg] = useState('');
+  const [currentPw, setCurrentPw] = useState('');
+  const [newPw, setNewPw] = useState('');
 
   const refresh = useCallback(async () => {
     try {
@@ -64,11 +68,29 @@ export default function TheatreList({ auth, onEnter }) {
         return;
       }
       if (!response?.ok) {
+        if (/18\+/.test(response?.error || '')) {
+          confirmAdultAndJoin(id);
+          return;
+        }
         setError(response?.error || 'Không vào được rạp.');
         return;
       }
       onEnter(response.room);
     });
+  }
+
+  async function confirmAdultAndJoin(id) {
+    if (!window.confirm('Rạp này gắn nhãn 18+. Bạn xác nhận mình đủ 18 tuổi?')) {
+      setError('Bạn cần xác nhận đủ 18 tuổi trong phần Tài khoản.');
+      return;
+    }
+    try {
+      await api('/api/account/adult', { method: 'POST', token, body: { confirmed: true } });
+    } catch (err) {
+      setError(err.message);
+      return;
+    }
+    joinTheatre(id);
   }
 
   async function createTheatre(event) {
@@ -84,6 +106,7 @@ export default function TheatreList({ auth, onEnter }) {
           name: form.name.trim(),
           description: form.description.trim(),
           visibility: form.visibility,
+          mature: form.mature,
           video: { kind: form.kind, src: form.src.trim() },
         },
       });
@@ -130,13 +153,92 @@ export default function TheatreList({ auth, onEnter }) {
   }
 
   async function removeTheatre(theatre) {
-    if (!window.confirm(`Xoá vĩnh viễn rạp "${theatre.name}"?`)) return;
+    if (!window.confirm(`Chuyển rạp "${theatre.name}" vào thùng rác?`)) return;
     try {
       await api(`/api/theatres/${theatre.id}`, { method: 'DELETE', token });
-      setNotice('Đã xoá rạp.');
+      setNotice('Đã chuyển rạp vào thùng rác (khôi phục được trong 30 ngày).');
       refresh();
     } catch (err) {
       setError(err.message);
+    }
+  }
+
+  async function restoreTheatre(theatre) {
+    try {
+      await api(`/api/theatres/${theatre.id}/restore`, { method: 'POST', token });
+      setNotice('Đã khôi phục rạp.');
+      refresh();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function transferTheatre(theatre) {
+    const email = window.prompt(`Email người nhận rạp "${theatre.name}":`);
+    if (!email) return;
+    try {
+      await api(`/api/theatres/${theatre.id}/transfer`, {
+        method: 'POST',
+        token,
+        body: { email },
+      });
+      setNotice('Đã chuyển nhượng rạp.');
+      refresh();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function changePassword(event) {
+    event.preventDefault();
+    setAccountMsg('');
+    try {
+      await api('/api/account/password', {
+        method: 'POST',
+        token,
+        body: { currentPassword: currentPw, newPassword: newPw },
+      });
+      setAccountMsg('Đã đổi mật khẩu.');
+      setCurrentPw('');
+      setNewPw('');
+    } catch (err) {
+      setAccountMsg(err.message);
+    }
+  }
+
+  async function confirmAdultAccount() {
+    try {
+      await api('/api/account/adult', { method: 'POST', token, body: { confirmed: true } });
+      setAccountMsg('Đã xác nhận đủ 18 tuổi.');
+    } catch (err) {
+      setAccountMsg(err.message);
+    }
+  }
+
+  async function exportData() {
+    try {
+      const data = await api('/api/account/export', { token });
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'virtual-cinema-account.json';
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setAccountMsg(err.message);
+    }
+  }
+
+  async function deleteAccount() {
+    if (!window.confirm('Xoá vĩnh viễn tài khoản và các rạp bạn sở hữu?')) return;
+    const password = window.prompt('Nhập mật khẩu để xác nhận:');
+    if (!password) return;
+    try {
+      await api('/api/account', { method: 'DELETE', token, body: { password } });
+      auth.logout();
+    } catch (err) {
+      setAccountMsg(err.message);
     }
   }
 
@@ -240,22 +342,31 @@ export default function TheatreList({ auth, onEnter }) {
                         <h3>{theatre.name}</h3>
                         <p className="theatre-card__owner">{theatre.owner.name}</p>
                       </div>
-                      <span
-                        className={`badge ${theatre.visibility === 'private' ? 'badge--private' : ''} ${
-                          theatre.status === 'closed' ? 'badge--closed' : ''
-                        } ${theatre.status === 'pending_review' ? 'badge--pending' : ''} ${
-                          theatre.status === 'rejected' ? 'badge--rejected' : ''
-                        }`}
-                      >
-                        {theatre.status === 'pending_review'
-                          ? 'Chờ duyệt'
-                          : theatre.status === 'rejected'
-                            ? 'Bị từ chối'
-                            : theatre.status === 'closed'
-                              ? 'Đã đóng'
-                              : theatre.visibility === 'private'
-                                ? 'Riêng tư'
-                                : 'Công khai'}
+                      <span className="theatre-card__badges">
+                        {theatre.mature ? <span className="badge badge--mature">18+</span> : null}
+                        <span
+                          className={`badge ${theatre.visibility === 'private' ? 'badge--private' : ''} ${
+                            theatre.status === 'closed' ? 'badge--closed' : ''
+                          } ${theatre.status === 'pending_review' ? 'badge--pending' : ''} ${
+                            theatre.status === 'rejected' || theatre.status === 'deleted'
+                              ? 'badge--rejected'
+                              : ''
+                          }`}
+                        >
+                          {theatre.status === 'deleted'
+                            ? 'Thùng rác'
+                            : theatre.status === 'archived'
+                              ? 'Lưu trữ'
+                              : theatre.status === 'pending_review'
+                                ? 'Chờ duyệt'
+                                : theatre.status === 'rejected'
+                                  ? 'Bị từ chối'
+                                  : theatre.status === 'closed'
+                                    ? 'Đã đóng'
+                                    : theatre.visibility === 'private'
+                                      ? 'Riêng tư'
+                                      : 'Công khai'}
+                        </span>
                       </span>
                     </header>
 
@@ -275,16 +386,34 @@ export default function TheatreList({ auth, onEnter }) {
                       </div>
 
                       <div className="theatre-card__actions">
-                        {isOwner && (theatre.status === 'open' || theatre.status === 'closed') ? (
+                        {isOwner && (theatre.status === 'deleted' || theatre.status === 'archived') ? (
                           <button
                             type="button"
                             className="card-btn"
-                            onClick={() =>
-                              updateStatus(theatre, theatre.status === 'open' ? 'closed' : 'open')
-                            }
+                            onClick={() => restoreTheatre(theatre)}
                           >
-                            {theatre.status === 'open' ? 'Đóng' : 'Mở'}
+                            Khôi phục
                           </button>
+                        ) : null}
+                        {isOwner && (theatre.status === 'open' || theatre.status === 'closed') ? (
+                          <>
+                            <button
+                              type="button"
+                              className="card-btn"
+                              onClick={() =>
+                                updateStatus(theatre, theatre.status === 'open' ? 'closed' : 'open')
+                              }
+                            >
+                              {theatre.status === 'open' ? 'Đóng' : 'Mở'}
+                            </button>
+                            <button
+                              type="button"
+                              className="card-btn"
+                              onClick={() => transferTheatre(theatre)}
+                            >
+                              Chuyển nhượng
+                            </button>
+                          </>
                         ) : null}
                         {isOwner && theatre.status === 'rejected' ? (
                           <button
@@ -295,7 +424,7 @@ export default function TheatreList({ auth, onEnter }) {
                             Khiếu nại
                           </button>
                         ) : null}
-                        {isOwner ? (
+                        {isOwner && !['deleted', 'archived'].includes(theatre.status) ? (
                           <button
                             type="button"
                             className="card-btn card-btn--danger"
@@ -321,6 +450,7 @@ export default function TheatreList({ auth, onEnter }) {
           )}
         </section>
 
+        <div className="theatres__side">
         <aside className="create-card">
           <h2>Tạo rạp mới</h2>
           <p className="create-card__lede">
@@ -398,6 +528,15 @@ export default function TheatreList({ auth, onEnter }) {
               </div>
             </div>
 
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={form.mature}
+                onChange={(event) => setForm({ ...form, mature: event.target.checked })}
+              />
+              Nội dung 18+ (người xem phải xác nhận độ tuổi)
+            </label>
+
             {formError.message ? (
               <div className="error" role="alert">
                 <strong>{formError.message}</strong>
@@ -414,6 +553,55 @@ export default function TheatreList({ auth, onEnter }) {
             Kiểm duyệt tự động: blocklist local, và OpenAI nếu đã cấu hình `OPENAI_API_KEY`.
           </p>
         </aside>
+
+        <aside className="account-card">
+          <h2>Tài khoản</h2>
+          <p className="account-card__email">{user.email}</p>
+          <div className="account-card__row">
+            {user.adultConfirmed ? (
+              <span className="state state--live">Đã xác nhận 18+</span>
+            ) : (
+              <button type="button" className="card-btn" onClick={confirmAdultAccount}>
+                Xác nhận đủ 18 tuổi
+              </button>
+            )}
+          </div>
+
+          <form className="form" onSubmit={changePassword}>
+            <label className="field">
+              <span>Mật khẩu hiện tại</span>
+              <input
+                type="password"
+                value={currentPw}
+                onChange={(event) => setCurrentPw(event.target.value)}
+                autoComplete="current-password"
+              />
+            </label>
+            <label className="field">
+              <span>Mật khẩu mới</span>
+              <input
+                type="password"
+                value={newPw}
+                onChange={(event) => setNewPw(event.target.value)}
+                autoComplete="new-password"
+              />
+            </label>
+            <button className="btn btn--primary" type="submit">
+              Đổi mật khẩu
+            </button>
+          </form>
+
+          <div className="account-card__actions">
+            <button type="button" className="card-btn" onClick={exportData}>
+              Tải dữ liệu
+            </button>
+            <button type="button" className="card-btn card-btn--danger" onClick={deleteAccount}>
+              Xoá tài khoản
+            </button>
+          </div>
+          {accountMsg ? <p className="notice">{accountMsg}</p> : null}
+        </aside>
+        </div>
       </div>
     </main>
   );

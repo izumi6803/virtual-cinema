@@ -36,7 +36,14 @@ const rooms = new RoomManager();
 const app = express();
 app.use(cors({ origin: true }));
 app.use(express.json({ limit: '128kb' }));
-app.get('/health', (req, res) => res.json({ ok: true, uptime: process.uptime() }));
+app.get('/health', (req, res) =>
+  res.json({
+    ok: true,
+    uptime: Math.round(process.uptime()),
+    db: isDbConnected(),
+    rooms: rooms.rooms.size,
+  }),
+);
 app.use(express.static(clientDist));
 
 const indexFile = path.join(clientDist, 'index.html');
@@ -146,6 +153,8 @@ function theatreView(theatre, full = false) {
     createdAt: theatre.createdAt,
     hostOverride: theatre.hostOverride || null,
     appeal: theatre.appeal || null,
+    mature: Boolean(theatre.mature),
+    deletedAt: theatre.deletedAt || null,
     moderation: {
       verdict: theatre.moderation?.verdict || 'allowed',
       provider: theatre.moderation?.provider || 'local',
@@ -226,6 +235,29 @@ function addAudit(actor, action, detail = {}) {
 function isMuted(theatre, accountId) {
   const until = theatre.mutedUsers?.[accountId];
   return Boolean(until && until > Date.now());
+}
+
+function sweepTheatres() {
+  const now = Date.now();
+  const PURGE_AFTER = 30 * 24 * 60 * 60 * 1000;
+  const ARCHIVE_AFTER = 30 * 24 * 60 * 60 * 1000;
+  let changed = false;
+
+  for (const theatre of [...store.data.theatres]) {
+    const last = theatre.lastActiveAt || theatre.createdAt || now;
+    if (theatre.status === 'deleted') {
+      if (theatre.deletedAt && now - theatre.deletedAt > PURGE_AFTER) {
+        store.data.theatres = store.data.theatres.filter((item) => item.id !== theatre.id);
+        changed = true;
+      }
+      continue;
+    }
+    if ((theatre.status === 'open' || theatre.status === 'closed') && now - last > ARCHIVE_AFTER) {
+      theatre.status = 'archived';
+      changed = true;
+    }
+  }
+  if (changed) store.save();
 }
 
 function buildAdminStats() {
@@ -360,6 +392,27 @@ app.get('/api/account/export', requireAuth, (req, res) => {
   });
 });
 
+app.post('/api/account/password', requireAuth, (req, res) => {
+  const user = store.findUserById(req.user.id);
+  if (!user) return res.status(404).json({ error: 'Không tìm thấy tài khoản.' });
+  if (!verifyPassword(String(req.body?.currentPassword ?? ''), user.passwordHash)) {
+    return res.status(400).json({ error: 'Mật khẩu hiện tại không đúng.' });
+  }
+  const next = String(req.body?.newPassword ?? '');
+  if (next.length < 8) {
+    return res.status(400).json({ error: 'Mật khẩu mới cần ít nhất 8 ký tự.' });
+  }
+  store.updateUser(user.id, { passwordHash: hashPassword(next) });
+  addAudit(req.user, 'password_change', {});
+  res.json({ ok: true });
+});
+
+app.post('/api/account/adult', requireAuth, (req, res) => {
+  store.updateUser(req.user.id, { adultConfirmed: Boolean(req.body?.confirmed) });
+  addAudit(req.user, 'adult_confirm', { confirmed: Boolean(req.body?.confirmed) });
+  res.json({ ok: true });
+});
+
 /* --------------------------------------------------------------- Theatres */
 
 app.get('/api/theatres', requireAuth, (req, res) => {
@@ -412,12 +465,14 @@ app.post(
       visibility,
       video: { kind, src },
       status: verdict.verdict === 'flagged' ? 'pending_review' : 'open',
+      mature: Boolean(req.body?.mature),
       moderation: verdict,
       moderators: [],
       bannedUsers: [],
       mutedUsers: {},
       hostOverride: null,
       appeal: null,
+      lastActiveAt: Date.now(),
       createdAt: Date.now(),
     };
     store.addTheatre(theatre);
@@ -465,9 +520,50 @@ app.delete('/api/theatres/:id', requireAuth, (req, res) => {
     return res.status(403).json({ error: 'Bạn không phải chủ rạp.' });
   }
   closeLiveTheatre(theatre.id, 'Rạp đã bị xoá.');
-  addAudit(req.user, 'theatre_delete', { theatreId: theatre.id, name: theatre.name });
-  store.deleteTheatre(theatre.id);
+  store.updateTheatre(theatre.id, { status: 'deleted', deletedAt: Date.now() });
+  addAudit(req.user, 'theatre_trash', { theatreId: theatre.id, name: theatre.name });
   res.json({ ok: true });
+});
+
+app.post('/api/theatres/:id/restore', requireAuth, (req, res) => {
+  const theatre = store.findTheatre(String(req.params.id || '').toUpperCase());
+  if (!theatre) return res.status(404).json({ error: 'Không tìm thấy rạp.' });
+  if (theatre.ownerId !== req.user.id && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Bạn không phải chủ rạp.' });
+  }
+  if (!['deleted', 'archived'].includes(theatre.status)) {
+    return res.status(400).json({ error: 'Rạp không ở trạng thái có thể khôi phục.' });
+  }
+  store.updateTheatre(theatre.id, {
+    status: 'open',
+    deletedAt: null,
+    lastActiveAt: Date.now(),
+  });
+  addAudit(req.user, 'theatre_restore', { theatreId: theatre.id });
+  res.json({ ok: true, theatre: theatreView(theatre, true) });
+});
+
+app.post('/api/theatres/:id/transfer', requireAuth, (req, res) => {
+  const theatre = store.findTheatre(String(req.params.id || '').toUpperCase());
+  if (!theatre) return res.status(404).json({ error: 'Không tìm thấy rạp.' });
+  if (theatre.ownerId !== req.user.id) {
+    return res.status(403).json({ error: 'Chỉ chủ rạp được chuyển nhượng.' });
+  }
+  const email = cleanEmail(req.body?.email);
+  const target = email ? store.findUserByEmail(email) : null;
+  if (!target) return res.status(400).json({ error: 'Không tìm thấy người dùng với email đó.' });
+  if (target.id === theatre.ownerId) {
+    return res.status(400).json({ error: 'Rạp đã thuộc người này.' });
+  }
+  store.updateTheatre(theatre.id, { ownerId: target.id });
+  rooms.reassignOwner(theatre.id, target.id);
+  addAudit(req.user, 'theatre_transfer', {
+    theatreId: theatre.id,
+    toEmail: target.email,
+  });
+  const room = rooms.getRoom(theatre.id);
+  if (room) broadcast(room);
+  res.json({ ok: true, theatre: theatreView(theatre, true) });
 });
 
 function canModerate(theatre, user) {
@@ -749,8 +845,8 @@ app.delete('/api/admin/theatres/:id', requireAuth, requireAdmin, (req, res) => {
   const theatre = store.findTheatre(String(req.params.id || '').toUpperCase());
   if (!theatre) return res.status(404).json({ error: 'Không tìm thấy rạp.' });
   closeLiveTheatre(theatre.id, 'Rạp đã bị quản trị viên xoá.');
-  addAudit(req.user, 'admin_theatre_delete', { theatreId: theatre.id, name: theatre.name });
-  store.deleteTheatre(theatre.id);
+  store.updateTheatre(theatre.id, { status: 'deleted', deletedAt: Date.now() });
+  addAudit(req.user, 'admin_theatre_trash', { theatreId: theatre.id, name: theatre.name });
   res.json({ ok: true });
 });
 
@@ -790,11 +886,22 @@ io.on('connection', (socket) => {
     if (theatre.status !== 'open') {
       return reply(ack, { ok: false, error: 'Rạp đang đóng.' });
     }
+    const account = store.findUserById(user.id);
+    if (theatre.mature && !account?.adultConfirmed) {
+      return reply(ack, {
+        ok: false,
+        error: 'Rạp 18+ — cần xác nhận độ tuổi trong phần Tài khoản.',
+      });
+    }
+
+    const existing = rooms.roomOf(socket.id);
+    if (existing && existing.id !== theatre.id) leaveRoom(socket);
 
     const result = rooms.join(theatre, user, socket.id);
     if (result.error) return reply(ack, { ok: false, error: result.error });
 
     socket.join(theatre.id);
+    store.updateTheatre(theatre.id, { lastActiveAt: Date.now() });
     metrics.recordSession(user.id);
     reply(ack, { ok: true, room: rooms.serialize(result.room) });
     socket.to(theatre.id).emit('system', { text: `${user.name} đã vào rạp.` });
@@ -928,6 +1035,7 @@ function leaveRoom(socket) {
 
 const sweeper = setInterval(() => {
   rooms.sweep();
+  sweepTheatres();
   store.pruneSessions();
   store.save();
 }, 10 * 60 * 1000);
@@ -965,3 +1073,20 @@ if (fs.existsSync(indexFile)) {
     console.log(`Dữ liệu: ${dataDir}${isDbConnected() ? ' (+ Postgres)' : ''}`);
   });
 })();
+
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[shutdown] nhận ${signal}, đang lưu trạng thái…`);
+  try {
+    if (isDbConnected()) await saveSnapshot('store', store.data);
+  } catch {
+    /* ignore */
+  }
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 5000).unref?.();
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

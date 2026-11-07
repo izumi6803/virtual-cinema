@@ -71,6 +71,14 @@ export class RoomManager {
     return this.rooms.get(theatreId) || null;
   }
 
+  reassignOwner(theatreId, ownerId) {
+    const room = this.rooms.get(theatreId);
+    if (!room) return;
+    room.ownerId = ownerId;
+    const ownerMember = [...room.users.values()].find((user) => user.accountId === ownerId);
+    if (ownerMember) room.hostId = ownerMember.id;
+  }
+
   join(theatre, user, socketId) {
     const room = this.ensure(theatre);
     if (room.users.has(socketId)) return { room };

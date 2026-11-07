@@ -234,6 +234,79 @@ try {
   check('xử lý báo cáo', resolve.status === 200);
   check('audit log có sự kiện', ov2.data.audit.length > 0);
 
+  // --- mature gate ---
+  const matureTheatre = await request('POST', '/api/theatres', {
+    token: u1.token,
+    body: { name: 'Rạp người lớn', mature: true, video: { kind: 'html5', src: 'https://example.com/m.mp4' } },
+  });
+  check('tạo rạp 18+', matureTheatre.status === 201 && matureTheatre.data.theatre.mature === true);
+
+  const u5 = await register('u5@test.io', 'Người 5');
+  const socket5 = await connect(u5.token);
+  const joinMature = await call(socket5, 'room:join', { theatreId: matureTheatre.data.theatre.id });
+  check('chặn join rạp 18+ chưa xác nhận', joinMature.ok === false && /18\+/.test(joinMature.error));
+
+  await request('POST', '/api/account/adult', { token: u5.token, body: { confirmed: true } });
+  const joinMature2 = await call(socket5, 'room:join', { theatreId: matureTheatre.data.theatre.id });
+  check('join rạp 18+ sau khi xác nhận', joinMature2.ok === true);
+  socket5.emit('room:leave');
+  await sleep(300);
+
+  // --- soft delete + restore ---
+  const tempTheatre = await request('POST', '/api/theatres', {
+    token: u5.token,
+    body: { name: 'Rạp tạm 5', video: { kind: 'html5', src: 'https://example.com/t5.mp4' } },
+  });
+  const delSoft = await request('DELETE', `/api/theatres/${tempTheatre.data.theatre.id}`, {
+    token: u5.token,
+  });
+  check('xoá mềm (thùng rác)', delSoft.status === 200);
+  const listAfterDelete = await request('GET', '/api/theatres', { token: u5.token });
+  const deletedEntry = listAfterDelete.data.theatres.find(
+    (item) => item.id === tempTheatre.data.theatre.id,
+  );
+  check('rạp trong thùng rác của chủ', deletedEntry && deletedEntry.status === 'deleted');
+
+  const restore = await request('POST', `/api/theatres/${tempTheatre.data.theatre.id}/restore`, {
+    token: u5.token,
+  });
+  check('khôi phục rạp', restore.status === 200 && restore.data.theatre.status === 'open');
+
+  // --- transfer ---
+  const transfer = await request('POST', `/api/theatres/${tempTheatre.data.theatre.id}/transfer`, {
+    token: u5.token,
+    body: { email: 'u1@test.io' },
+  });
+  check('chuyển nhượng rạp', transfer.status === 200);
+  const u1List = await request('GET', '/api/theatres', { token: u1.token });
+  check('chủ mới thấy rạp', u1List.data.theatres.some((item) => item.id === tempTheatre.data.theatre.id));
+  const u5List = await request('GET', '/api/theatres', { token: u5.token });
+  const u5Entry = u5List.data.theatres.find((item) => item.id === tempTheatre.data.theatre.id);
+  check('chủ cũ không còn sở hữu', u5Entry && u5Entry.owner.id !== u5.user.id);
+
+  // --- change password ---
+  const pwChange = await request('POST', '/api/account/password', {
+    token: u5.token,
+    body: { currentPassword: 'password1', newPassword: 'newpassword2' },
+  });
+  check('đổi mật khẩu', pwChange.status === 200);
+  const newLogin = await request('POST', '/api/auth/login', {
+    body: { email: 'u5@test.io', password: 'newpassword2' },
+  });
+  check('đăng nhập mật khẩu mới', newLogin.status === 200);
+  const oldLogin = await request('POST', '/api/auth/login', {
+    body: { email: 'u5@test.io', password: 'password1' },
+  });
+  check('mật khẩu cũ bị từ chối', oldLogin.status === 401);
+  socket5.disconnect();
+
+  // --- health ---
+  const health = await request('GET', '/health');
+  check(
+    'health chi tiết',
+    health.status === 200 && typeof health.data.rooms === 'number' && 'db' in health.data,
+  );
+
   // --- account deletion (GDPR) ---
   const u4 = await register('u4@test.io', 'Xoá tài khoản');
   const u4Theatre = await request('POST', '/api/theatres', {

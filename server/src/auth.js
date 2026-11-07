@@ -42,6 +42,8 @@ export function publicUser(user) {
     name: user.name,
     role: user.role,
     banned: Boolean(user.banned),
+    strikes: user.strikes || 0,
+    adultConfirmed: Boolean(user.adultConfirmed),
     createdAt: user.createdAt,
     lastLoginAt: user.lastLoginAt || 0,
   };

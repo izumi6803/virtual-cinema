@@ -1363,6 +1363,34 @@ button {
   background: rgba(255, 80, 80, 0.1);
 }
 
+.badge--mature {
+  color: #ff9db1;
+  border-color: rgba(255, 110, 140, 0.4);
+  background: rgba(255, 80, 120, 0.12);
+}
+
+.theatre-card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12px;
+  color: rgba(244, 236, 225, 0.65);
+  cursor: pointer;
+}
+
+.check input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--amber);
+}
+
 .card-btn {
   padding: 6px 10px;
   border: 1px solid var(--line);
@@ -1399,8 +1427,6 @@ button {
 }
 
 .create-card {
-  position: sticky;
-  top: 20px;
   padding: 22px;
   border: 1px solid var(--line);
   border-radius: 18px;
@@ -1427,6 +1453,59 @@ button {
   font-family: var(--font-display);
   font-size: 24px;
   font-weight: 600;
+}
+
+.theatres__side {
+  position: sticky;
+  top: 20px;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.account-card {
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(16, 13, 21, 0.66);
+  backdrop-filter: blur(14px);
+}
+
+.account-card h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 600;
+}
+
+.account-card__email {
+  margin: 6px 0 12px;
+  font-size: 12px;
+  color: rgba(244, 236, 225, 0.5);
+}
+
+.account-card__row {
+  margin-bottom: 14px;
+}
+
+.account-card .form {
+  margin-top: 0;
+}
+
+.account-card .btn {
+  margin-top: 4px;
+}
+
+.account-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.account-card .notice {
+  margin-top: 12px;
 }
 
 /* ----------------------------------------------------------------- Admin */
@@ -1788,7 +1867,7 @@ button {
     grid-template-columns: 1fr;
   }
 
-  .create-card {
+  .theatres__side {
     position: static;
     order: -1;
   }

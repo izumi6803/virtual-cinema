@@ -14,6 +14,9 @@ Rạp chiếu phim ảo 3D trong trình duyệt: tài khoản, sảnh rạp, ch�
 - **Kiểm duyệt chat**: lọc từ khoá, rate-limit (tự mute 60 giây khi spam), moderator/owner mute người dùng.
 - **Báo cáo & audit**: người dùng báo cáo rạp; admin xử lý; audit log mọi thao tác quản trị/điều phối.
 - **GDPR**: người dùng tự xoá tài khoản (kèm rạp sở hữu) và export dữ liệu cá nhân.
+- **Vòng đời rạp**: xoá mềm (thùng rác 30 ngày, khôi phục được), chuyển nhượng cho người khác, tự lưu trữ sau 30 ngày không hoạt động.
+- **18+**: rạp có thể gắn nhãn người lớn; người xem phải xác nhận độ tuổi một lần.
+- **Tài khoản**: đổi mật khẩu; `/health` báo trạng thái DB + số phòng; server lưu snapshot khi nhận SIGTERM.
 - **Voice WebRTC mesh + spatial audio** (HRTF): mọi người ở chế độ nghe, chỉ người nói cần bật micro.
 - **Trang quản trị** `/admin`: người online, rạp, tài khoản (khoá/mở, nâng/hạ quyền), log kiểm duyệt.
 - **Kiểm duyệt phim** tự động theo metadata: blocklist local + adapter OpenAI (`omni-moderation-latest`).
@@ -116,7 +119,7 @@ Mọi lần kiểm tra đều ghi vào log để admin xem ở `/admin`.
 npm test
 ```
 
-Bộ test e2e tự dựng server trên cổng 3100 với `DATA_DIR` tạm, kiểm tra 28 bước: đăng ký/đăng nhập, chặn email trùng, kiểm duyệt (chặn tên miền / chờ duyệt từ khoá), quyền vào rạp, chờ duyệt/khiếu nại/duyệt lại, strike, uỷ quyền host, lọc & mute chat, báo cáo, moderator kick, ban theo rạp, audit, xoá tài khoản, admin khoá tài khoản, socket không hợp lệ.
+Bộ test e2e tự dựng server trên cổng 3100 với `DATA_DIR` tạm, kiểm tra 41 bước: đăng ký/đăng nhập, chặn email trùng, kiểm duyệt (chặn tên miền / chờ duyệt từ khoá), quyền vào rạp, chờ duyệt/khiếu nại/duyệt lại, strike, uỷ quyền host, lọc & mute chat, báo cáo, rạp 18+, xoá mềm/khôi phục, chuyển nhượng, đổi mật khẩu, moderator kick, ban theo rạp, audit, xoá tài khoản, admin khoá tài khoản, socket không hợp lệ.
 
 ## CI/CD
 
