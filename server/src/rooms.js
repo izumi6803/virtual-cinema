@@ -1,7 +1,12 @@
 export const SEAT_ROWS = 6;
 export const SEAT_COLS = 10;
 
-const MAX_ROOM_SIZE = 30;
+const SEAT_CAPACITY = SEAT_ROWS * SEAT_COLS;
+const requestedRoomSize = Number(process.env.MAX_ROOM_SIZE);
+const MAX_ROOM_SIZE =
+  Number.isFinite(requestedRoomSize) && requestedRoomSize > 0
+    ? Math.min(SEAT_CAPACITY, Math.floor(requestedRoomSize))
+    : SEAT_CAPACITY;
 
 export function seatPosition(seatId) {
   const [row, col] = String(seatId).split('-').map(Number);

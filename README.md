@@ -7,7 +7,7 @@ Rạp chiếu phim ảo 3D trong trình duyệt: tài khoản, sảnh rạp, ch�
 - **Tài khoản** (email + mật khẩu, hash bằng `scrypt`, token phiên 7 ngày): đăng ký, đăng nhập, đăng xuất.
 - **Sảnh rạp**: sau khi đăng nhập thấy danh sách rạp công khai + rạp riêng của mình; vào nhanh bằng mã 6 ký tự.
 - **Rạp persistent**: mỗi rạp có tên, chủ rạp, nguồn phim, chế độ công khai/riêng tư, trạng thái mở/đóng. Rạp không biến mất khi hết người.
-- **Phòng chiếu 3D** (Three.js): 60 ghế, avatar, camera theo ghế, đèn rạp, màn hình phát video.
+- **Phòng chiếu 3D** (Three.js): 60 ghế (tối đa 60 người/phòng), avatar, camera theo ghế, đèn rạp, màn hình phát video.
 - **Đồng bộ video** server-authoritative: play, pause, seek; bù lệch đồng hồ + hiệu chỉnh drift.
 - **Hai adapter nguồn phim**: MP4 (`VideoTexture`) và YouTube (iframe phủ màn hình).
 - **Chat theo vùng**: tin nhắn chỉ hiện với người ngồi gần.
@@ -50,6 +50,7 @@ npm start
 | Biến | Mặc định | Mô tả |
 | --- | --- | --- |
 | `PORT` | `3001` | Cổng API. |
+| `MAX_ROOM_SIZE` | `60` | Số người tối đa mỗi phòng (mặc định bằng số ghế; giảm nếu muốn giới hạn, tối đa 60). |
 | `DATA_DIR` | `server/data` | Nơi lưu `db.json` (tài khoản, rạp, session) và `stats.json`. |
 | `DATABASE_URL` | *(trống)* | Chuỗi kết nối Postgres. Nếu có, server lưu snapshot trạng thái vào bảng `app_state` (giữ dữ liệu qua các lần deploy); không có thì dùng file JSON. |
 | `ADMIN_EMAIL` | `admin@example.com` | Email tài khoản quản trị (tạo khi khởi động nếu chưa có). |

@@ -28,16 +28,16 @@ HTTP, 50 connections, 10 s each:
 | `GET /api/theatres` (auth) | ~3.5k | 13 ms | 21 ms | 23 ms |
 | `GET /api/auth/me` (auth) | ~3.7k | 12 ms | 23 ms | 25 ms |
 
-Socket.IO, 30 concurrent clients (room capacity) joining the same room:
+Socket.IO, 60 concurrent clients (full room capacity) joining the same room:
 
 | Metric | p50 | p95 | p99 |
 | --- | --- | --- | --- |
-| WebSocket connect | 26.8 ms | 27.9 ms | 28.0 ms |
-| `time:sync` ack | 2.8 ms | 3.3 ms | 3.6 ms |
-| `room:join` ack | 32.5 ms | 80.1 ms | 83.2 ms |
-| `video:control` broadcast to all clients | 2.3 ms | 3.1 ms | 3.2 ms |
+| WebSocket connect | 45.6 ms | 48.4 ms | 48.6 ms |
+| `time:sync` ack | 6.2 ms | 8.6 ms | 9.1 ms |
+| `room:join` ack | 77.2 ms | 174.9 ms | 182.1 ms |
+| `video:control` broadcast to all clients | 1.7 ms | 2.8 ms | 2.9 ms |
 
 Notes: numbers are from a single local process with the JSON store; they show
-server overhead, not production capacity. A 100-client test connected and
-survived, but only the first 30 could join — the rest are correctly rejected
-because `MAX_ROOM_SIZE` caps a room at 30 viewers.
+server overhead, not production capacity. A room holds up to
+`MAX_ROOM_SIZE` viewers (default = 60, the seat count; override with the
+`MAX_ROOM_SIZE` env var, e.g. 30 to reduce WebRTC mesh pressure).
