@@ -25,6 +25,7 @@ export default function CinemaView({ initialRoom, token, onLeave }) {
   const [toast, setToast] = useState('');
   const [copied, setCopied] = useState(false);
   const [voiceHint, setVoiceHint] = useState(true);
+  const [unread, setUnread] = useState(0);
 
   const canvasRef = useRef(null);
   const overlayHostRef = useRef(null);
@@ -32,8 +33,11 @@ export default function CinemaView({ initialRoom, token, onLeave }) {
   const playerRef = useRef(null);
   const voiceRef = useRef(null);
   const roomRef = useRef(initialRoom);
+  const chatOpenRef = useRef(chatOpen);
+  const shortcutRef = useRef(null);
 
   roomRef.current = room;
+  chatOpenRef.current = chatOpen;
 
   const isHost = room.hostId === socket.id;
   const mySeat = room.users.find((user) => user.id === socket.id)?.seatId || null;
@@ -57,13 +61,50 @@ export default function CinemaView({ initialRoom, token, onLeave }) {
   }, [toast]);
 
   useEffect(() => {
+    if (chatOpen) setUnread(0);
+  }, [chatOpen]);
+
+  useEffect(() => {
+    const onKey = (event) => {
+      if (event.defaultPrevented) return;
+      const tag = event.target?.tagName;
+      if (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        event.target?.isContentEditable
+      ) {
+        return;
+      }
+      const handlers = shortcutRef.current;
+      if (!handlers) return;
+      if (event.code === 'Space') {
+        if (!handlers.isHost) return;
+        event.preventDefault();
+        handlers.togglePlay();
+      } else if (event.key.toLowerCase() === 'm') {
+        event.preventDefault();
+        handlers.toggleMovieMute();
+      } else if (event.key.toLowerCase() === 'c') {
+        event.preventDefault();
+        handlers.toggleChat();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  useEffect(() => {
     const timer = setTimeout(() => setVoiceHint(false), 7000);
     return () => clearTimeout(timer);
   }, []);
 
   useEffect(() => {
     const onState = (next) => setRoom(next);
-    const onChat = (message) => setMessages((previous) => [...previous.slice(-120), message]);
+    const onChat = (message) => {
+      setMessages((previous) => [...previous.slice(-120), message]);
+      if (!chatOpenRef.current) setUnread((count) => count + 1);
+    };
     const onSystem = (payload) =>
       setMessages((previous) => [
         ...previous.slice(-120),
@@ -373,6 +414,13 @@ export default function CinemaView({ initialRoom, token, onLeave }) {
     onLeave();
   }
 
+  shortcutRef.current = {
+    isHost,
+    togglePlay,
+    toggleMovieMute,
+    toggleChat: () => setChatOpen((open) => !open),
+  };
+
   return (
     <div className="cinema" onPointerDownCapture={nudgePlayback}>
       <div className="stage">
@@ -447,6 +495,7 @@ export default function CinemaView({ initialRoom, token, onLeave }) {
         muted={muted}
         voiceCount={voiceCount}
         chatOpen={chatOpen}
+        unread={unread}
         onTogglePlay={togglePlay}
         onSeek={seekTo}
         onToggleMovieMute={toggleMovieMute}
@@ -455,7 +504,11 @@ export default function CinemaView({ initialRoom, token, onLeave }) {
         onToggleChat={() => setChatOpen((open) => !open)}
       />
 
-      {toast ? <div className="toast">{toast}</div> : null}
+      {toast ? (
+        <div className="toast" role="status" aria-live="polite">
+          {toast}
+        </div>
+      ) : null}
     </div>
   );
 }

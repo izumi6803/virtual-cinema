@@ -320,7 +320,17 @@ export default function TheatreList({ auth, onEnter }) {
             <span>{loading ? 'Đang tải…' : `${theatres.length} rạp`}</span>
           </header>
 
-          {!loading && theatres.length === 0 ? (
+          {loading && theatres.length === 0 ? (
+            <div className="theatre-grid" aria-hidden="true">
+              {[0, 1, 2].map((index) => (
+                <div className="theatre-card theatre-card--skeleton" key={index}>
+                  <div className="theatre-card__screen" />
+                  <div className="skeleton-line" />
+                  <div className="skeleton-line skeleton-line--short" />
+                </div>
+              ))}
+            </div>
+          ) : theatres.length === 0 ? (
             <p className="empty">Chưa có rạp nào. Tạo rạp đầu tiên ở bên phải.</p>
           ) : (
             <div className="theatre-grid">

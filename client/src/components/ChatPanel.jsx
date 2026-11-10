@@ -26,7 +26,11 @@ export default function ChatPanel({ open, messages, myId, onSend, onClose }) {
   }
 
   return (
-    <aside className={`chat ${open ? 'is-open' : ''}`} aria-hidden={!open}>
+    <aside
+      className={`chat ${open ? 'is-open' : ''}`}
+      aria-hidden={!open}
+      inert={open ? undefined : ''}
+    >
       <header className="chat__head">
         <div>
           <h2>Trò chuyện</h2>

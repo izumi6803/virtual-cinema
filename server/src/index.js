@@ -36,6 +36,12 @@ const rooms = new RoomManager();
 const app = express();
 app.use(cors({ origin: true }));
 app.use(express.json({ limit: '128kb' }));
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
 app.get('/health', (req, res) =>
   res.json({
     ok: true,
@@ -431,7 +437,11 @@ app.post(
 
     if (name.length < 2) return res.status(400).json({ error: 'Tên rạp cần ít nhất 2 ký tự.' });
     if (!src) return res.status(400).json({ error: 'Thiếu đường dẫn phim.' });
-    if (!req.user || store.data.theatres.filter((t) => t.ownerId === req.user.id).length >= MAX_THEATRES_PER_USER) {
+    const owned = store.data.theatres.filter(
+      (item) =>
+        item.ownerId === req.user.id && !['deleted', 'archived'].includes(item.status),
+    ).length;
+    if (owned >= MAX_THEATRES_PER_USER) {
       return res
         .status(400)
         .json({ error: `Mỗi tài khoản chỉ được mở tối đa ${MAX_THEATRES_PER_USER} rạp.` });
@@ -1060,11 +1070,24 @@ if (fs.existsSync(indexFile)) {
   app.get('*', (req, res) => res.sendFile(indexFile));
 }
 
+app.use((err, req, res, next) => {
+  console.error('[http]', err?.message || err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ error: 'Lỗi máy chủ.' });
+});
+
 (async () => {
-  await initDb();
-  if (isDbConnected()) {
-    const snapshot = await loadSnapshot('store');
-    if (snapshot) store.loadData(snapshot);
+  try {
+    await Promise.race([
+      initDb(),
+      new Promise((resolve) => setTimeout(resolve, 8000)),
+    ]);
+    if (isDbConnected()) {
+      const snapshot = await loadSnapshot('store');
+      if (snapshot) store.loadData(snapshot);
+    }
+  } catch (error) {
+    console.warn('[db] bỏ qua khởi tạo Postgres:', error.message);
   }
   seedAdmin();
   server.listen(PORT, () => {

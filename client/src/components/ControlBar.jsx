@@ -12,6 +12,7 @@ export default function ControlBar({
   muted,
   voiceCount,
   chatOpen,
+  unread = 0,
   onTogglePlay,
   onSeek,
   onToggleMovieMute,
@@ -76,6 +77,7 @@ export default function ControlBar({
           onClick={onToggleMovieMute}
           title={movieMuted ? 'Bật tiếng phim' : 'Tắt tiếng phim'}
           aria-label={movieMuted ? 'Bật tiếng phim' : 'Tắt tiếng phim'}
+          aria-pressed={movieMuted}
         >
           <Icon name={movieMuted ? 'volumeOff' : 'volume'} />
         </button>
@@ -86,6 +88,7 @@ export default function ControlBar({
           onClick={onToggleMic}
           title={micOn ? 'Tắt micro' : 'Bật micro'}
           aria-label={micOn ? 'Tắt micro' : 'Bật micro'}
+          aria-pressed={micOn}
         >
           <Icon name={micOn ? 'mic' : 'micOff'} />
           {voiceCount > 0 ? <span className="dock-btn__badge">{voiceCount}</span> : null}
@@ -108,10 +111,14 @@ export default function ControlBar({
           type="button"
           className={`dock-btn ${chatOpen ? 'is-active' : ''}`}
           onClick={onToggleChat}
-          title="Trò chuyện"
-          aria-label="Trò chuyện"
+          title="Trò chuyện (C)"
+          aria-label={chatOpen ? 'Đóng trò chuyện' : 'Mở trò chuyện'}
+          aria-expanded={chatOpen}
         >
           <Icon name="chat" />
+          {unread > 0 && !chatOpen ? (
+            <span className="dock-btn__badge">{unread > 9 ? '9+' : unread}</span>
+          ) : null}
         </button>
       </div>
     </footer>
