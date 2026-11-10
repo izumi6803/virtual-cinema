@@ -48,6 +48,7 @@ export class RoomManager {
       name: theatre.name,
       ownerId: theatre.ownerId,
       hostId: null,
+      moderators: Array.isArray(theatre.moderators) ? [...theatre.moderators] : [],
       createdAt: now,
       lastActive: now,
       video: {
@@ -204,11 +205,13 @@ export class RoomManager {
       name: room.name,
       ownerId: room.ownerId,
       hostId: room.hostId,
+      moderators: room.moderators || [],
       createdAt: room.createdAt,
       serverTime: Date.now(),
       video: { ...room.video },
       users: [...room.users.values()].map((user) => ({
         id: user.id,
+        accountId: user.accountId,
         name: user.name,
         seatId: user.seatId,
         voice: user.voice,

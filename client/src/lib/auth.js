@@ -33,8 +33,10 @@ export function useAuth() {
         setUser(data.user);
         setLoading(false);
       })
-      .catch(() => {
-        if (!cancelled) clear();
+      .catch((err) => {
+        if (cancelled) return;
+        if (err?.status === 401) clear();
+        else setLoading(false);
       });
     return () => {
       cancelled = true;

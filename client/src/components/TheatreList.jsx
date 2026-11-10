@@ -1,13 +1,43 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../net/api.js';
 import { socket } from '../net/socket.js';
+import { useInstallPrompt } from '../lib/install.js';
+import Dialog from './Dialog.jsx';
 
 const SAMPLE_MP4 =
   'https://cdn.jsdelivr.net/gh/mediaelement/mediaelement-files@master/big_buck_bunny.mp4';
 const SAMPLE_YOUTUBE = 'https://www.youtube.com/watch?v=aqz-KE-bpKQ';
 
-export default function TheatreList({ auth, onEnter }) {
+const DIALOG_TITLES = {
+  close: 'Đóng rạp',
+  appeal: 'Khiếu nại rạp',
+  transfer: 'Chuyển nhượng rạp',
+  delete: 'Xoá rạp',
+  deleteAccount: 'Xoá tài khoản',
+  adult: 'Xác nhận 18+',
+};
+const DIALOG_ACTIONS = {
+  close: 'Đóng rạp',
+  appeal: 'Gửi khiếu nại',
+  transfer: 'Chuyển nhượng',
+  delete: 'Xoá rạp',
+  deleteAccount: 'Xoá tài khoản',
+  adult: 'Xác nhận',
+};
+const DIALOG_NOTES = {
+  close: 'Rạp sẽ đóng với mọi người. Bạn có thể mở lại sau.',
+  appeal: 'Quản trị viên sẽ xem lại rạp này.',
+  transfer: 'Bạn sẽ không còn là chủ rạp này.',
+  delete: 'Rạp vào thùng rác 30 ngày và có thể khôi phục.',
+  deleteAccount: 'Xoá vĩnh viễn tài khoản và các rạp bạn sở hữu. Không hoàn tác được.',
+  adult: 'Rạp này gắn nhãn 18+. Bạn xác nhận mình đủ 18 tuổi?',
+};
+const DIALOG_DANGER = new Set(['close', 'delete', 'deleteAccount']);
+const DIALOG_NEEDS_TEXT = new Set(['appeal', 'transfer', 'deleteAccount']);
+
+export default function TheatreList({ auth, onEnter, initialCode = '' }) {
   const { token, user } = auth;
+  const { canInstall, install } = useInstallPrompt();
   const [theatres, setTheatres] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -27,6 +57,10 @@ export default function TheatreList({ auth, onEnter }) {
   const [accountMsg, setAccountMsg] = useState('');
   const [currentPw, setCurrentPw] = useState('');
   const [newPw, setNewPw] = useState('');
+  const [dialog, setDialog] = useState(null);
+  const [dialogValue, setDialogValue] = useState('');
+  const [dialogBusy, setDialogBusy] = useState(false);
+  const autoJoinRef = useRef(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -45,6 +79,16 @@ export default function TheatreList({ auth, onEnter }) {
     const timer = setInterval(refresh, 8000);
     return () => clearInterval(timer);
   }, [refresh]);
+
+  useEffect(() => {
+    if (!initialCode || autoJoinRef.current) return undefined;
+    autoJoinRef.current = true;
+    const run = () => joinTheatre(initialCode);
+    if (socket.connected) run();
+    else socket.once('connect', run);
+    return () => socket.off('connect', run);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCode]);
 
   useEffect(() => {
     if (!notice) return undefined;
@@ -79,18 +123,71 @@ export default function TheatreList({ auth, onEnter }) {
     });
   }
 
-  async function confirmAdultAndJoin(id) {
-    if (!window.confirm('Rạp này gắn nhãn 18+. Bạn xác nhận mình đủ 18 tuổi?')) {
-      setError('Bạn cần xác nhận đủ 18 tuổi trong phần Tài khoản.');
-      return;
-    }
+  function confirmAdultAndJoin(id) {
+    openDialog('adult', { code: id });
+  }
+
+  function openDialog(type, data = {}) {
+    setDialog({ type, ...data });
+    setDialogValue('');
+  }
+
+  function closeDialog() {
+    if (dialogBusy) return;
+    setDialog(null);
+    setDialogValue('');
+  }
+
+  async function submitDialog() {
+    if (!dialog || dialogBusy) return;
+    setDialogBusy(true);
+    setError('');
     try {
-      await api('/api/account/adult', { method: 'POST', token, body: { confirmed: true } });
+      if (dialog.type === 'close') {
+        await api(`/api/theatres/${dialog.theatre.id}`, {
+          method: 'PATCH',
+          token,
+          body: { status: 'closed' },
+        });
+        setNotice('Đã đóng rạp.');
+      } else if (dialog.type === 'appeal') {
+        await api(`/api/theatres/${dialog.theatre.id}/appeal`, {
+          method: 'POST',
+          token,
+          body: { reason: dialogValue.trim() },
+        });
+        setNotice('Đã gửi khiếu nại. Rạp sẽ được quản trị viên xem lại.');
+      } else if (dialog.type === 'transfer') {
+        await api(`/api/theatres/${dialog.theatre.id}/transfer`, {
+          method: 'POST',
+          token,
+          body: { email: dialogValue.trim() },
+        });
+        setNotice('Đã chuyển nhượng rạp.');
+      } else if (dialog.type === 'delete') {
+        await api(`/api/theatres/${dialog.theatre.id}`, { method: 'DELETE', token });
+        setNotice('Đã chuyển rạp vào thùng rác (khôi phục được trong 30 ngày).');
+      } else if (dialog.type === 'deleteAccount') {
+        await api('/api/account', { method: 'DELETE', token, body: { password: dialogValue } });
+        auth.logout();
+        return;
+      } else if (dialog.type === 'adult') {
+        await api('/api/account/adult', { method: 'POST', token, body: { confirmed: true } });
+        const code = dialog.code;
+        setDialog(null);
+        setDialogValue('');
+        setDialogBusy(false);
+        joinTheatre(code);
+        return;
+      }
+      setDialog(null);
+      setDialogValue('');
+      refresh();
     } catch (err) {
       setError(err.message);
-      return;
+    } finally {
+      setDialogBusy(false);
     }
-    joinTheatre(id);
   }
 
   async function createTheatre(event) {
@@ -126,41 +223,25 @@ export default function TheatreList({ auth, onEnter }) {
   }
 
   async function updateStatus(theatre, status) {
-    if (status === 'closed' && !window.confirm(`Đóng rạp "${theatre.name}"?`)) return;
+    if (status === 'closed') {
+      openDialog('close', { theatre });
+      return;
+    }
     try {
       await api(`/api/theatres/${theatre.id}`, { method: 'PATCH', token, body: { status } });
-      setNotice(status === 'closed' ? 'Đã đóng rạp.' : 'Đã mở lại rạp.');
+      setNotice('Đã mở lại rạp.');
       refresh();
     } catch (err) {
       setError(err.message);
     }
   }
 
-  async function appealTheatre(theatre) {
-    const reason = window.prompt(`Lý do khiếu nại cho rạp "${theatre.name}":`);
-    if (reason == null) return;
-    try {
-      await api(`/api/theatres/${theatre.id}/appeal`, {
-        method: 'POST',
-        token,
-        body: { reason },
-      });
-      setNotice('Đã gửi khiếu nại. Rạp sẽ được quản trị viên xem lại.');
-      refresh();
-    } catch (err) {
-      setError(err.message);
-    }
+  function appealTheatre(theatre) {
+    openDialog('appeal', { theatre });
   }
 
-  async function removeTheatre(theatre) {
-    if (!window.confirm(`Chuyển rạp "${theatre.name}" vào thùng rác?`)) return;
-    try {
-      await api(`/api/theatres/${theatre.id}`, { method: 'DELETE', token });
-      setNotice('Đã chuyển rạp vào thùng rác (khôi phục được trong 30 ngày).');
-      refresh();
-    } catch (err) {
-      setError(err.message);
-    }
+  function removeTheatre(theatre) {
+    openDialog('delete', { theatre });
   }
 
   async function restoreTheatre(theatre) {
@@ -173,20 +254,8 @@ export default function TheatreList({ auth, onEnter }) {
     }
   }
 
-  async function transferTheatre(theatre) {
-    const email = window.prompt(`Email người nhận rạp "${theatre.name}":`);
-    if (!email) return;
-    try {
-      await api(`/api/theatres/${theatre.id}/transfer`, {
-        method: 'POST',
-        token,
-        body: { email },
-      });
-      setNotice('Đã chuyển nhượng rạp.');
-      refresh();
-    } catch (err) {
-      setError(err.message);
-    }
+  function transferTheatre(theatre) {
+    openDialog('transfer', { theatre });
   }
 
   async function changePassword(event) {
@@ -230,16 +299,8 @@ export default function TheatreList({ auth, onEnter }) {
     }
   }
 
-  async function deleteAccount() {
-    if (!window.confirm('Xoá vĩnh viễn tài khoản và các rạp bạn sở hữu?')) return;
-    const password = window.prompt('Nhập mật khẩu để xác nhận:');
-    if (!password) return;
-    try {
-      await api('/api/account', { method: 'DELETE', token, body: { password } });
-      auth.logout();
-    } catch (err) {
-      setAccountMsg(err.message);
-    }
+  function deleteAccount() {
+    openDialog('deleteAccount');
   }
 
   function switchKind(kind) {
@@ -259,6 +320,11 @@ export default function TheatreList({ auth, onEnter }) {
         </div>
         <div className="hud__meta">
           <span className="chip">{user.name}</span>
+          {canInstall ? (
+            <button type="button" className="icon-btn" onClick={install}>
+              Cài ứng dụng
+            </button>
+          ) : null}
           {user.role === 'admin' ? (
             <a className="icon-btn" href="/admin">
               Quản trị
@@ -613,6 +679,68 @@ export default function TheatreList({ auth, onEnter }) {
         </aside>
         </div>
       </div>
+
+      <Dialog
+        open={!!dialog}
+        title={dialog ? DIALOG_TITLES[dialog.type] : ''}
+        onClose={closeDialog}
+      >
+        {dialog?.type === 'appeal' ? (
+          <label className="field">
+            <span>Lý do khiếu nại</span>
+            <textarea
+              value={dialogValue}
+              onChange={(event) => setDialogValue(event.target.value)}
+              maxLength={500}
+              rows={4}
+            />
+          </label>
+        ) : null}
+        {dialog?.type === 'transfer' ? (
+          <label className="field">
+            <span>Email người nhận</span>
+            <input
+              type="email"
+              value={dialogValue}
+              onChange={(event) => setDialogValue(event.target.value)}
+              placeholder="ban@example.com"
+              spellCheck={false}
+            />
+          </label>
+        ) : null}
+        {dialog?.type === 'deleteAccount' ? (
+          <label className="field">
+            <span>Mật khẩu</span>
+            <input
+              type="password"
+              value={dialogValue}
+              onChange={(event) => setDialogValue(event.target.value)}
+              autoComplete="current-password"
+            />
+          </label>
+        ) : null}
+
+        <p className="dialog__note">{dialog ? DIALOG_NOTES[dialog.type] : ''}</p>
+
+        <div className="dialog__actions">
+          <button type="button" className="btn" onClick={closeDialog} disabled={dialogBusy}>
+            Huỷ
+          </button>
+          <button
+            type="button"
+            className={`btn ${
+              dialog && DIALOG_DANGER.has(dialog.type) ? 'btn--danger' : 'btn--primary'
+            }`}
+            onClick={submitDialog}
+            disabled={
+              dialogBusy ||
+              (dialog && DIALOG_NEEDS_TEXT.has(dialog.type) && !dialogValue.trim())
+            }
+          >
+            {dialogBusy ? 'Đang xử lý…' : dialog ? DIALOG_ACTIONS[dialog.type] : ''}
+          </button>
+        </div>
+      </Dialog>
     </main>
   );
 }

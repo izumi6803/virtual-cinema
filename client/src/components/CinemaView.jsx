@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { effectiveTime } from '../lib/clock.js';
-import { seatDistance, seatLabel } from '../lib/layout.js';
+import { seatDistance, seatLabel, SEAT_COLS, SEAT_ROWS } from '../lib/layout.js';
 import { api } from '../net/api.js';
 import { socket } from '../net/socket.js';
 import { VoiceChat } from '../net/voice.js';
-import { CinemaScene } from '../three/CinemaScene.js';
+import { useWakeLock } from '../lib/wakeLock.js';
 import { createPlayer } from '../video/createPlayer.js';
 import ChatPanel from './ChatPanel.jsx';
 import ControlBar from './ControlBar.jsx';
+import Dialog from './Dialog.jsx';
 import { Icon } from './Icons.jsx';
 import VoiceStatus from './VoiceStatus.jsx';
 
-export default function CinemaView({ initialRoom, token, onLeave }) {
+export default function CinemaView({ initialRoom, token, user, onLeave }) {
   const [room, setRoom] = useState(initialRoom);
   const [messages, setMessages] = useState([]);
   const [chatOpen, setChatOpen] = useState(
@@ -26,6 +27,20 @@ export default function CinemaView({ initialRoom, token, onLeave }) {
   const [copied, setCopied] = useState(false);
   const [voiceHint, setVoiceHint] = useState(true);
   const [unread, setUnread] = useState(0);
+  const [seatOpen, setSeatOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportText, setReportText] = useState('');
+  const [reportBusy, setReportBusy] = useState(false);
+  const [peopleOpen, setPeopleOpen] = useState(false);
+  const [personTarget, setPersonTarget] = useState(null);
+  const [closeOpen, setCloseOpen] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [transferEmail, setTransferEmail] = useState('');
+  const [manageBusy, setManageBusy] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const autoSeatRef = useRef(false);
+
+  useWakeLock(room.video.playing);
 
   const canvasRef = useRef(null);
   const overlayHostRef = useRef(null);
@@ -40,7 +55,11 @@ export default function CinemaView({ initialRoom, token, onLeave }) {
   chatOpenRef.current = chatOpen;
 
   const isHost = room.hostId === socket.id;
-  const mySeat = room.users.find((user) => user.id === socket.id)?.seatId || null;
+  const isOwner = Boolean(user?.id && room.ownerId === user.id);
+  const canModerate = Boolean(
+    user && (user.role === 'admin' || isOwner || (room.moderators || []).includes(user.id)),
+  );
+  const mySeat = room.users.find((member) => member.id === socket.id)?.seatId || null;
   const voiceCount = room.users.filter((user) => user.speaking).length;
 
   const visibleMessages = useMemo(
@@ -52,6 +71,11 @@ export default function CinemaView({ initialRoom, token, onLeave }) {
         return seatDistance(mySeat, message.seatId) <= 4.6;
       }),
     [messages, mySeat],
+  );
+
+  const takenSeats = useMemo(
+    () => new Set(room.users.map((user) => user.seatId).filter(Boolean)),
+    [room.users],
   );
 
   useEffect(() => {
@@ -98,6 +122,12 @@ export default function CinemaView({ initialRoom, token, onLeave }) {
   useEffect(() => {
     const timer = setTimeout(() => setVoiceHint(false), 7000);
     return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    const onChange = () => setFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
   }, []);
 
   useEffect(() => {
@@ -173,18 +203,38 @@ export default function CinemaView({ initialRoom, token, onLeave }) {
   }, [onLeave]);
 
   useEffect(() => {
-    const scene = new CinemaScene(canvasRef.current, {
-      onSeatClick: (seatId) => {
-        socket.emit('seat:claim', { seatId }, (response) => {
-          if (response && !response.ok) setToast(response.error || 'Không chọn được ghế.');
+    let cancelled = false;
+    let scene = null;
+
+    import('../three/CinemaScene.js')
+      .then(({ CinemaScene }) => {
+        if (cancelled || !canvasRef.current) return;
+        scene = new CinemaScene(canvasRef.current, {
+          onSeatClick: (seatId) => {
+            socket.emit('seat:claim', { seatId }, (response) => {
+              if (response && !response.ok) setToast(response.error || 'Không chọn được ghế.');
+            });
+          },
         });
-      },
-    });
-    sceneRef.current = scene;
-    scene.setRoomState(roomRef.current, socket.id);
+        sceneRef.current = scene;
+        scene.setRoomState(roomRef.current, socket.id);
+
+        const player = playerRef.current;
+        const host = overlayHostRef.current;
+        if (player?.isOverlay && host) {
+          const element = player.getOverlayElement();
+          host.replaceChildren(element);
+          scene.setOverlay(element);
+        } else if (player) {
+          scene.setScreenTexture(player.getTexture());
+        }
+      })
+      .catch(() => {});
+
     return () => {
+      cancelled = true;
       sceneRef.current = null;
-      scene.dispose();
+      scene?.dispose();
     };
   }, []);
 
@@ -228,6 +278,21 @@ export default function CinemaView({ initialRoom, token, onLeave }) {
   useEffect(() => {
     sceneRef.current?.setRoomState(room, socket.id);
   }, [room]);
+
+  useEffect(() => {
+    if (mySeat || autoSeatRef.current || room.users.length === 0) return;
+    autoSeatRef.current = true;
+    for (let row = 0; row < SEAT_ROWS; row += 1) {
+      for (let col = 0; col < SEAT_COLS; col += 1) {
+        const seatId = `${row}-${col}`;
+        if (takenSeats.has(seatId)) continue;
+        socket.emit('seat:claim', { seatId }, (response) => {
+          if (response && !response.ok) autoSeatRef.current = false;
+        });
+        return;
+      }
+    }
+  }, [mySeat, room.users.length, takenSeats]);
 
 
 
@@ -328,6 +393,23 @@ export default function CinemaView({ initialRoom, token, onLeave }) {
     });
   }
 
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await document.documentElement.requestFullscreen();
+        try {
+          await screen.orientation?.lock?.('landscape');
+        } catch {
+          // Orientation lock is best-effort.
+        }
+      }
+    } catch {
+      setToast('Trình duyệt không hỗ trợ toàn màn hình.');
+    }
+  }
+
   function seekTo(value) {
     if (!isHost) return;
     playerRef.current?.seek(value);
@@ -386,18 +468,112 @@ export default function CinemaView({ initialRoom, token, onLeave }) {
     });
   }
 
-  async function reportTheatre() {
-    const reason = window.prompt('Mô tả vi phạm (gửi tới quản trị viên):');
-    if (!reason) return;
+  function claimSeat(seatId) {
+    socket.emit('seat:claim', { seatId }, (response) => {
+      if (response?.ok) {
+        setSeatOpen(false);
+        setToast(`Bạn đang ở ${seatLabel(seatId)}.`);
+      } else {
+        setToast(response?.error || 'Không chọn được ghế.');
+      }
+    });
+  }
+
+  async function submitReport(event) {
+    event?.preventDefault();
+    if (reportBusy || !reportText.trim()) return;
+    setReportBusy(true);
     try {
       await api(`/api/theatres/${room.id}/report`, {
         method: 'POST',
         token,
-        body: { reason },
+        body: { reason: reportText.trim() },
       });
+      setReportOpen(false);
+      setReportText('');
       setToast('Đã gửi báo cáo. Cảm ơn bạn.');
     } catch (err) {
       setToast(err.message);
+    } finally {
+      setReportBusy(false);
+    }
+  }
+
+  async function moderate(action) {
+    const target = personTarget;
+    if (!target || manageBusy) return;
+    setManageBusy(true);
+    try {
+      if (action === 'mute' || action === 'unmute') {
+        await api(`/api/theatres/${room.id}/mute`, {
+          method: 'POST',
+          token,
+          body: { userId: target.accountId, minutes: action === 'mute' ? 10 : 0 },
+        });
+      } else if (action === 'kick') {
+        await api(`/api/theatres/${room.id}/kick`, {
+          method: 'POST',
+          token,
+          body: { userId: target.accountId },
+        });
+      } else if (action === 'ban') {
+        await api(`/api/theatres/${room.id}/ban`, {
+          method: 'POST',
+          token,
+          body: { userId: target.accountId, banned: true },
+        });
+      } else if (action === 'moderator') {
+        const isMod = (room.moderators || []).includes(target.accountId);
+        await api(`/api/theatres/${room.id}/moderators`, {
+          method: 'POST',
+          token,
+          body: { userId: target.accountId, action: isMod ? 'remove' : 'add' },
+        });
+      }
+      setToast('Đã cập nhật.');
+      setPersonTarget(null);
+    } catch (err) {
+      setToast(err.message);
+    } finally {
+      setManageBusy(false);
+    }
+  }
+
+  async function closeRoom() {
+    if (manageBusy) return;
+    setManageBusy(true);
+    try {
+      await api(`/api/theatres/${room.id}`, {
+        method: 'PATCH',
+        token,
+        body: { status: 'closed' },
+      });
+      setCloseOpen(false);
+    } catch (err) {
+      setToast(err.message);
+    } finally {
+      setManageBusy(false);
+    }
+  }
+
+  async function transferRoom(event) {
+    event?.preventDefault();
+    if (manageBusy || !transferEmail.trim()) return;
+    setManageBusy(true);
+    try {
+      await api(`/api/theatres/${room.id}/transfer`, {
+        method: 'POST',
+        token,
+        body: { email: transferEmail.trim() },
+      });
+      setTransferOpen(false);
+      setPeopleOpen(false);
+      setTransferEmail('');
+      setToast('Đã chuyển nhượng rạp.');
+    } catch (err) {
+      setToast(err.message);
+    } finally {
+      setManageBusy(false);
     }
   }
 
@@ -443,23 +619,51 @@ export default function CinemaView({ initialRoom, token, onLeave }) {
             <Icon name="seat" size={14} />
             {seatLabel(mySeat)}
           </span>
-          <button type="button" className="icon-btn" onClick={copyCode}>
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={copyCode}
+            aria-label={`Sao chép mã rạp ${room.id}`}
+          >
             <Icon name="copy" size={15} />
-            {copied ? 'Đã chép' : room.id}
+            <span className="hud__label">{copied ? 'Đã chép' : room.id}</span>
           </button>
-          <button type="button" className="icon-btn" onClick={reportTheatre} title="Báo cáo rạp">
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={() => setSeatOpen(true)}
+            title="Đổi ghế"
+            aria-label="Đổi ghế"
+          >
+            <Icon name="seat" size={15} />
+            <span className="hud__label">Đổi ghế</span>
+          </button>
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={() => setReportOpen(true)}
+            title="Báo cáo rạp"
+            aria-label="Báo cáo rạp"
+          >
             <Icon name="flag" size={15} />
-            Báo cáo
+            <span className="hud__label">Báo cáo</span>
           </button>
-          <button type="button" className="icon-btn icon-btn--danger" onClick={handleLeave}>
+          <button
+            type="button"
+            className="icon-btn icon-btn--danger"
+            onClick={handleLeave}
+            aria-label="Rời rạp"
+          >
             <Icon name="exit" size={16} />
-            Rời rạp
+            <span className="hud__label">Rời rạp</span>
           </button>
         </div>
       </header>
 
       {!mySeat ? (
-        <div className="seat-hint">Bấm vào một ghế trống để ngồi xuống</div>
+        <button type="button" className="seat-hint" onClick={() => setSeatOpen(true)}>
+          Chọn ghế để ngồi xuống
+        </button>
       ) : null}
 
       {voiceHint ? (
@@ -477,6 +681,15 @@ export default function CinemaView({ initialRoom, token, onLeave }) {
           voiceRef.current?.playTestTone();
         }}
       />
+
+      {chatOpen ? (
+        <button
+          type="button"
+          className="chat-backdrop"
+          onClick={() => setChatOpen(false)}
+          aria-label="Đóng trò chuyện"
+        />
+      ) : null}
 
       <ChatPanel
         open={chatOpen}
@@ -497,13 +710,272 @@ export default function CinemaView({ initialRoom, token, onLeave }) {
         voiceCount={voiceCount}
         chatOpen={chatOpen}
         unread={unread}
+        peopleCount={room.users.length}
+        fullscreen={fullscreen}
         onTogglePlay={togglePlay}
         onSeek={seekTo}
         onToggleMovieMute={toggleMovieMute}
         onToggleMic={toggleMic}
         onToggleMute={toggleMute}
         onToggleChat={() => setChatOpen((open) => !open)}
+        onTogglePeople={() => setPeopleOpen(true)}
+        onToggleFullscreen={toggleFullscreen}
       />
+
+      <Dialog open={seatOpen} title="Chọn ghế" onClose={() => setSeatOpen(false)}>
+        <p className="dialog__note">Bấm vào ghế trống để ngồi. Ghế đang có người sẽ bị mờ.</p>
+        <div className="seat-grid" role="group" aria-label="Sơ đồ ghế">
+          {Array.from({ length: SEAT_ROWS }, (_, row) => (
+            <div className="seat-row" key={row}>
+              <span className="seat-row__label">Hàng {row + 1}</span>
+              {Array.from({ length: SEAT_COLS }, (_, col) => {
+                const seatId = `${row}-${col}`;
+                const isMine = seatId === mySeat;
+                const isTaken = takenSeats.has(seatId) && !isMine;
+                return (
+                  <button
+                    key={seatId}
+                    type="button"
+                    className={`seat-pick ${isMine ? 'is-mine' : ''}`}
+                    disabled={isTaken}
+                    onClick={() => claimSeat(seatId)}
+                    aria-label={`Hàng ${row + 1} ghế ${col + 1}${isTaken ? ' đã có người' : ''}`}
+                  >
+                    {col + 1}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+        <div className="dialog__actions">
+          <button type="button" className="btn" onClick={() => setSeatOpen(false)}>
+            Đóng
+          </button>
+        </div>
+      </Dialog>
+
+      <Dialog open={reportOpen} title="Báo cáo rạp" onClose={() => setReportOpen(false)}>
+        <label className="field">
+          <span>Mô tả vi phạm</span>
+          <textarea
+            value={reportText}
+            onChange={(event) => setReportText(event.target.value)}
+            maxLength={500}
+            rows={4}
+            placeholder="Nội dung không phù hợp, phim lậu…"
+          />
+        </label>
+        <p className="dialog__note">Báo cáo được gửi tới quản trị viên.</p>
+        <div className="dialog__actions">
+          <button
+            type="button"
+            className="btn"
+            onClick={() => setReportOpen(false)}
+            disabled={reportBusy}
+          >
+            Huỷ
+          </button>
+          <button
+            type="button"
+            className="btn btn--primary"
+            onClick={submitReport}
+            disabled={reportBusy || !reportText.trim()}
+          >
+            {reportBusy ? 'Đang gửi…' : 'Gửi báo cáo'}
+          </button>
+        </div>
+      </Dialog>
+
+      <Dialog
+        open={peopleOpen}
+        title={`Mọi người (${room.users.length})`}
+        onClose={() => setPeopleOpen(false)}
+        sheet
+      >
+        <ul className="people">
+          {room.users.map((person) => {
+            const isMe = person.id === socket.id;
+            const meta = [
+              seatLabel(person.seatId),
+              person.accountId === room.ownerId ? 'Chủ rạp' : '',
+              person.id === room.hostId ? 'Chủ phòng' : '',
+              (room.moderators || []).includes(person.accountId) ? 'Điều phối' : '',
+              isMe ? 'Bạn' : '',
+            ]
+              .filter(Boolean)
+              .join(' · ');
+            return (
+              <li
+                key={person.id}
+                className={`people__row ${person.speaking ? 'is-speaking' : ''}`}
+              >
+                <span className="people__avatar" aria-hidden="true">
+                  {person.name.slice(0, 1).toUpperCase()}
+                </span>
+                <span className="people__id">
+                  <span className="people__name">{person.name}</span>
+                  <span className="people__meta">{meta}</span>
+                </span>
+                {canModerate && !isMe ? (
+                  <button
+                    type="button"
+                    className="people__more"
+                    onClick={() => setPersonTarget(person)}
+                    aria-label={`Tuỳ chọn cho ${person.name}`}
+                  >
+                    ⋯
+                  </button>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+
+        {isOwner ? (
+          <div className="people__manage">
+            <h3>Quản lý rạp</h3>
+            <div className="dialog__actions">
+              <button type="button" className="btn" onClick={() => setTransferOpen(true)}>
+                Chuyển nhượng
+              </button>
+              <button
+                type="button"
+                className="btn btn--danger"
+                onClick={() => setCloseOpen(true)}
+              >
+                Đóng rạp
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="dialog__actions">
+          <button type="button" className="btn" onClick={() => setPeopleOpen(false)}>
+            Đóng
+          </button>
+        </div>
+      </Dialog>
+
+      <Dialog
+        open={!!personTarget}
+        title={personTarget?.name || ''}
+        onClose={() => setPersonTarget(null)}
+        sheet
+      >
+        <p className="dialog__note">{personTarget ? seatLabel(personTarget.seatId) : ''}</p>
+        <div className="person-actions">
+          <button
+            type="button"
+            className="btn"
+            onClick={() => moderate('mute')}
+            disabled={manageBusy}
+          >
+            Tắt chat 10 phút
+          </button>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => moderate('unmute')}
+            disabled={manageBusy}
+          >
+            Bỏ tắt chat
+          </button>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => moderate('kick')}
+            disabled={manageBusy}
+          >
+            Đưa ra khỏi rạp
+          </button>
+          <button
+            type="button"
+            className="btn btn--danger"
+            onClick={() => moderate('ban')}
+            disabled={manageBusy}
+          >
+            Cấm khỏi rạp
+          </button>
+          {isOwner ? (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => moderate('moderator')}
+              disabled={manageBusy}
+            >
+              {(room.moderators || []).includes(personTarget?.accountId)
+                ? 'Bỏ điều phối'
+                : 'Bổ nhiệm điều phối'}
+            </button>
+          ) : null}
+        </div>
+        <div className="dialog__actions">
+          <button type="button" className="btn" onClick={() => setPersonTarget(null)}>
+            Huỷ
+          </button>
+        </div>
+      </Dialog>
+
+      <Dialog open={closeOpen} title="Đóng rạp" onClose={() => setCloseOpen(false)}>
+        <p className="dialog__note">
+          Mọi người sẽ được đưa ra khỏi rạp. Bạn có thể mở lại rạp trong Sảnh rạp.
+        </p>
+        <div className="dialog__actions">
+          <button
+            type="button"
+            className="btn"
+            onClick={() => setCloseOpen(false)}
+            disabled={manageBusy}
+          >
+            Huỷ
+          </button>
+          <button
+            type="button"
+            className="btn btn--danger"
+            onClick={closeRoom}
+            disabled={manageBusy}
+          >
+            {manageBusy ? 'Đang đóng…' : 'Đóng rạp'}
+          </button>
+        </div>
+      </Dialog>
+
+      <Dialog
+        open={transferOpen}
+        title="Chuyển nhượng rạp"
+        onClose={() => setTransferOpen(false)}
+      >
+        <label className="field">
+          <span>Email người nhận</span>
+          <input
+            type="email"
+            value={transferEmail}
+            onChange={(event) => setTransferEmail(event.target.value)}
+            placeholder="ban@example.com"
+            spellCheck={false}
+          />
+        </label>
+        <p className="dialog__note">Bạn sẽ không còn là chủ rạp này.</p>
+        <div className="dialog__actions">
+          <button
+            type="button"
+            className="btn"
+            onClick={() => setTransferOpen(false)}
+            disabled={manageBusy}
+          >
+            Huỷ
+          </button>
+          <button
+            type="button"
+            className="btn btn--primary"
+            onClick={transferRoom}
+            disabled={manageBusy || !transferEmail.trim()}
+          >
+            {manageBusy ? 'Đang xử lý…' : 'Chuyển nhượng'}
+          </button>
+        </div>
+      </Dialog>
 
       {toast ? (
         <div className="toast" role="status" aria-live="polite">

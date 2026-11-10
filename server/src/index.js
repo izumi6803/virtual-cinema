@@ -616,6 +616,11 @@ app.post('/api/theatres/:id/moderators', requireAuth, (req, res) => {
   if (action === 'add') moderators.add(userId);
   else moderators.delete(userId);
   store.updateTheatre(theatre.id, { moderators: [...moderators] });
+  const room = rooms.getRoom(theatre.id);
+  if (room) {
+    room.moderators = [...moderators];
+    broadcast(room);
+  }
   addAudit(req.user, action === 'add' ? 'moderator_add' : 'moderator_remove', {
     theatreId: theatre.id,
     userId,

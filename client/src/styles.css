@@ -11,6 +11,9 @@
   --danger: #ff8f8f;
   --line: rgba(244, 236, 225, 0.12);
   --line-strong: rgba(244, 236, 225, 0.22);
+  --text-1: rgba(244, 236, 225, 0.92);
+  --text-2: rgba(244, 236, 225, 0.74);
+  --text-3: rgba(244, 236, 225, 0.6);
   --font-display: 'Playfair Display', Georgia, 'Times New Roman', serif;
   --font-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
@@ -154,7 +157,7 @@ button {
   font-weight: 500;
   letter-spacing: 0.24em;
   text-transform: uppercase;
-  color: rgba(244, 236, 225, 0.52);
+  color: var(--text-2);
 }
 
 .eyebrow__dot {
@@ -220,7 +223,7 @@ button {
   margin: clamp(30px, 4vw, 46px) 0 0;
   font-size: 12px;
   letter-spacing: 0.04em;
-  color: rgba(244, 236, 225, 0.36);
+  color: var(--text-3);
 }
 
 /* ---------------------------------------------------------------- Entry */
@@ -293,7 +296,7 @@ button {
   font-weight: 500;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: rgba(244, 236, 225, 0.48);
+  color: var(--text-3);
 }
 
 .field input {
@@ -308,10 +311,31 @@ button {
 }
 
 .field input::placeholder {
-  color: rgba(244, 236, 225, 0.28);
+  color: rgba(244, 236, 225, 0.42);
 }
 
 .field input:focus {
+  outline: none;
+  border-color: rgba(240, 180, 106, 0.55);
+  background: rgba(0, 0, 0, 0.44);
+  box-shadow: 0 0 0 3px rgba(240, 180, 106, 0.13);
+}
+
+.field textarea {
+  width: 100%;
+  min-height: 92px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.34);
+  color: var(--cream);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.field textarea:focus {
   outline: none;
   border-color: rgba(240, 180, 106, 0.55);
   background: rgba(0, 0, 0, 0.44);
@@ -348,7 +372,7 @@ button {
   margin: -4px 0 0;
   font-size: 11.5px;
   line-height: 1.65;
-  color: rgba(244, 236, 225, 0.52);
+  color: var(--text-3);
 }
 
 .error {
@@ -490,7 +514,7 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 20px 24px 44px;
+  padding: calc(20px + env(safe-area-inset-top)) 24px 44px;
   background: linear-gradient(to bottom, rgba(5, 4, 9, 0.9), rgba(5, 4, 9, 0));
   pointer-events: none;
 }
@@ -603,17 +627,18 @@ button {
 .seat-hint {
   position: absolute;
   left: 50%;
-  bottom: 108px;
+  bottom: calc(108px + env(safe-area-inset-bottom));
   z-index: 6;
   padding: 10px 18px;
   border: 1px solid rgba(240, 180, 106, 0.26);
   border-radius: 999px;
   background: rgba(12, 10, 18, 0.72);
   color: var(--amber-bright);
+  font-family: var(--font-ui);
   font-size: 12px;
   letter-spacing: 0.04em;
   backdrop-filter: blur(12px);
-  pointer-events: none;
+  cursor: pointer;
   transform: translateX(-50%);
   animation: floatY 3.4s ease-in-out infinite;
 }
@@ -638,7 +663,7 @@ button {
 
 .voice-status {
   position: absolute;
-  bottom: 100px;
+  bottom: calc(100px + env(safe-area-inset-bottom));
   left: max(20px, calc(50% - 450px));
   z-index: 8;
   display: inline-flex;
@@ -723,7 +748,7 @@ button {
 .dock {
   position: absolute;
   left: 50%;
-  bottom: 20px;
+  bottom: calc(20px + env(safe-area-inset-bottom));
   z-index: 8;
   width: min(900px, calc(100% - 40px));
   display: flex;
@@ -772,7 +797,7 @@ button {
   min-width: 40px;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-  color: rgba(244, 236, 225, 0.6);
+  color: var(--text-2);
   text-align: center;
 }
 
@@ -826,7 +851,7 @@ button {
   border: 1px solid transparent;
   border-radius: 11px;
   background: transparent;
-  color: rgba(244, 236, 225, 0.62);
+  color: var(--text-2);
   font-size: 10.5px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1057,12 +1082,257 @@ button {
   color: #1b1004;
 }
 
+/* --------------------------------------------------------------- Dialog */
+
+.dialog {
+  width: min(460px, calc(100vw - 32px));
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 18px;
+  background: var(--ink-2);
+  color: var(--cream);
+  box-shadow: 0 40px 90px -30px rgba(0, 0, 0, 0.9);
+}
+
+.dialog::backdrop {
+  background: rgba(4, 3, 8, 0.74);
+  backdrop-filter: blur(6px);
+}
+
+.dialog__body {
+  display: grid;
+  gap: 14px;
+  padding: 22px;
+}
+
+.dialog__body h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.dialog__note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+
+.dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.dialog__actions .btn {
+  width: auto;
+  padding: 11px 16px;
+}
+
+.dialog__actions .btn:not(.btn--primary):not(.btn--danger) {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-1);
+}
+
+.btn--danger {
+  border: 1px solid rgba(255, 120, 120, 0.4);
+  background: rgba(255, 120, 120, 0.14);
+  color: #ffc2c2;
+}
+
+.btn--danger:hover:not(:disabled) {
+  background: rgba(255, 120, 120, 0.22);
+}
+
+.dialog__handle {
+  display: none;
+}
+
+.people {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  max-height: 44vh;
+  overflow-y: auto;
+}
+
+.people__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 10px;
+}
+
+.people__row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.people__avatar {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 50%;
+  background: rgba(240, 180, 106, 0.14);
+  color: var(--amber-bright);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.people__row.is-speaking .people__avatar {
+  box-shadow: 0 0 0 2px rgba(110, 231, 168, 0.55);
+  color: #a8f0c8;
+}
+
+.people__id {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.people__name {
+  font-size: 13.5px;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.people__meta {
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.people__more {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.people__more:hover {
+  border-color: rgba(240, 180, 106, 0.5);
+  color: var(--cream);
+}
+
+.people__manage {
+  display: grid;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.people__manage h3 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.person-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.person-actions .btn {
+  width: 100%;
+  padding: 12px 14px;
+}
+
+.chat-backdrop {
+  display: none;
+}
+
+.seat-grid {
+  display: grid;
+  gap: 4px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.seat-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: max-content;
+}
+
+.seat-row__label {
+  width: 40px;
+  flex: none;
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.seat-pick {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-2);
+  font-size: 9.5px;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.seat-pick:hover:not(:disabled) {
+  border-color: rgba(240, 180, 106, 0.55);
+  color: var(--cream);
+}
+
+.seat-pick.is-mine {
+  border-color: transparent;
+  background: var(--amber);
+  color: #1b1004;
+  font-weight: 700;
+}
+
+.seat-pick:disabled {
+  opacity: 0.24;
+  cursor: not-allowed;
+}
+
+@media (max-width: 460px) {
+  .seat-pick {
+    width: 22px;
+    height: 22px;
+  }
+
+  .seat-row__label {
+    width: 34px;
+  }
+}
+
 /* ---------------------------------------------------------------- Misc */
 
 .toast {
   position: absolute;
   left: 50%;
-  bottom: 104px;
+  bottom: calc(104px + env(safe-area-inset-bottom));
   z-index: 20;
   padding: 11px 18px;
   border: 1px solid rgba(255, 120, 120, 0.3);
@@ -1808,7 +2078,7 @@ button {
 
 .bar__visitors {
   font-size: 9px;
-  color: rgba(244, 236, 225, 0.3);
+  color: var(--text-3);
 }
 
 .summary {
@@ -1969,8 +2239,12 @@ button {
   }
 
   .hud {
-    padding: 14px 14px 34px;
+    padding: calc(14px + env(safe-area-inset-top)) 14px 34px;
     align-items: flex-start;
+  }
+
+  .hud__label {
+    display: none;
   }
 
   .hud__room,
@@ -1984,7 +2258,7 @@ button {
   }
 
   .theatres {
-    padding: 18px 16px 56px;
+    padding: 18px 16px calc(56px + env(safe-area-inset-bottom));
   }
 
   .theatres__bar {
@@ -2022,7 +2296,7 @@ button {
   }
 
   .dock {
-    bottom: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom));
     width: calc(100% - 24px);
     gap: 9px;
     padding: 9px 11px;
@@ -2046,7 +2320,7 @@ button {
     top: auto;
     left: 12px;
     right: 12px;
-    bottom: 86px;
+    bottom: calc(86px + env(safe-area-inset-bottom));
     width: auto;
     height: min(64vh, 520px);
     transform: translateY(calc(100% + 40px));
@@ -2057,7 +2331,7 @@ button {
   }
 
   .seat-hint {
-    bottom: 86px;
+    bottom: calc(86px + env(safe-area-inset-bottom));
     font-size: 11px;
     padding: 9px 14px;
   }
@@ -2071,7 +2345,7 @@ button {
   }
 
   .voice-status {
-    bottom: 126px;
+    bottom: calc(126px + env(safe-area-inset-bottom));
     left: 50%;
     font-size: 10px;
     padding: 7px 10px;
@@ -2080,9 +2354,44 @@ button {
   }
 
   .toast {
-    bottom: 82px;
+    bottom: calc(82px + env(safe-area-inset-bottom));
     width: calc(100% - 40px);
     text-align: center;
+  }
+
+  .dialog--sheet {
+    position: fixed;
+    inset: auto 0 0 0;
+    width: 100%;
+    max-width: 100%;
+    max-height: 84vh;
+    margin: 0;
+    border-radius: 18px 18px 0 0;
+    border-bottom: 0;
+    overflow-y: auto;
+  }
+
+  .dialog--sheet .dialog__body {
+    padding: 12px 18px calc(18px + env(safe-area-inset-bottom));
+  }
+
+  .dialog--sheet .dialog__handle {
+    display: block;
+    width: 38px;
+    height: 4px;
+    margin: 0 auto 2px;
+    border-radius: 999px;
+    background: rgba(244, 236, 225, 0.24);
+  }
+
+  .chat-backdrop {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 7;
+    border: 0;
+    background: rgba(4, 3, 8, 0.42);
+    backdrop-filter: blur(2px);
   }
 }
 
@@ -2101,7 +2410,7 @@ button {
 
   .chat {
     top: 62px;
-    bottom: 80px;
+    bottom: calc(80px + env(safe-area-inset-bottom));
   }
 }
 

@@ -36,6 +36,30 @@ const paths = {
     </>
   ),
   chat: <path d="M4 5.5h16v11H9.5L4 20.5z" />,
+  people: (
+    <>
+      <circle cx="9" cy="8" r="3.2" />
+      <path d="M3.5 19a5.5 5.5 0 0 1 11 0" />
+      <path d="M16 5.2a3 3 0 0 1 0 5.6" />
+      <path d="M17.5 14.2A5 5 0 0 1 21 19" />
+    </>
+  ),
+  expand: (
+    <>
+      <path d="M4 9V4h5" />
+      <path d="M20 9V4h-5" />
+      <path d="M4 15v5h5" />
+      <path d="M20 15v5h-5" />
+    </>
+  ),
+  compress: (
+    <>
+      <path d="M9 4v5H4" />
+      <path d="M15 4v5h5" />
+      <path d="M9 20v-5H4" />
+      <path d="M15 20v-5h5" />
+    </>
+  ),
   flag: (
     <>
       <path d="M5 21V4" />

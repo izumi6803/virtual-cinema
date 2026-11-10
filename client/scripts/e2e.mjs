@@ -174,6 +174,11 @@ try {
   const socket3 = await connect(u3.token);
   const join3 = await call(socket3, 'room:join', { theatreId: pub.data.theatre.id });
   check('uỷ quyền host', join3.room.hostId === socket3.id);
+  check(
+    'phòng trả accountId + moderators',
+    join3.room.users.some((member) => member.accountId === u3.user.id) &&
+      Array.isArray(join3.room.moderators),
+  );
 
   // --- chat moderation ---
   const badChat = await call(socket3, 'chat:send', { text: 'noi dung porn' });

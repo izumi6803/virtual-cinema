@@ -13,12 +13,16 @@ export default function ControlBar({
   voiceCount,
   chatOpen,
   unread = 0,
+  peopleCount = 0,
+  fullscreen = false,
   onTogglePlay,
   onSeek,
   onToggleMovieMute,
   onToggleMic,
   onToggleMute,
   onToggleChat,
+  onTogglePeople,
+  onToggleFullscreen,
 }) {
   const [scrubbing, setScrubbing] = useState(false);
   const [scrubValue, setScrubValue] = useState(0);
@@ -109,6 +113,17 @@ export default function ControlBar({
 
         <button
           type="button"
+          className="dock-btn"
+          onClick={onTogglePeople}
+          title="Mọi người"
+          aria-label="Mọi người"
+        >
+          <Icon name="people" />
+          {peopleCount > 0 ? <span className="dock-btn__badge">{peopleCount}</span> : null}
+        </button>
+
+        <button
+          type="button"
           className={`dock-btn ${chatOpen ? 'is-active' : ''}`}
           onClick={onToggleChat}
           title="Trò chuyện (C)"
@@ -119,6 +134,16 @@ export default function ControlBar({
           {unread > 0 && !chatOpen ? (
             <span className="dock-btn__badge">{unread > 9 ? '9+' : unread}</span>
           ) : null}
+        </button>
+
+        <button
+          type="button"
+          className={`dock-btn ${fullscreen ? 'is-active' : ''}`}
+          onClick={onToggleFullscreen}
+          title={fullscreen ? 'Thoát toàn màn hình' : 'Toàn màn hình'}
+          aria-label={fullscreen ? 'Thoát toàn màn hình' : 'Toàn màn hình'}
+        >
+          <Icon name={fullscreen ? 'compress' : 'expand'} />
         </button>
       </div>
     </footer>
