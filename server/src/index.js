@@ -34,6 +34,7 @@ const metrics = new Metrics(path.join(dataDir, 'stats.json'));
 const rooms = new RoomManager();
 
 const app = express();
+app.set('trust proxy', 1);
 app.use(cors({ origin: true }));
 app.use(express.json({ limit: '128kb' }));
 app.use((req, res, next) => {
@@ -214,6 +215,7 @@ function kickUserFromTheatre(theatreId, accountId) {
 const MAX_THEATRES_PER_USER = 5;
 const CHAT_BUCKETS = new Map();
 const JOIN_BUCKETS = new Map();
+const REPORT_BUCKETS = new Map();
 
 function tooManyAttempts(map, key, max, windowMs) {
   const now = Date.now();
@@ -409,6 +411,7 @@ app.post('/api/account/password', requireAuth, (req, res) => {
     return res.status(400).json({ error: 'Mật khẩu mới cần ít nhất 8 ký tự.' });
   }
   store.updateUser(user.id, { passwordHash: hashPassword(next) });
+  store.deleteSessionsForUser(user.id, hashToken(req.token));
   addAudit(req.user, 'password_change', {});
   res.json({ ok: true });
 });
@@ -500,6 +503,11 @@ app.patch('/api/theatres/:id', requireAuth, (req, res) => {
 
   const patch = {};
   if (req.body?.status === 'closed' || req.body?.status === 'open') patch.status = req.body.status;
+  if (patch.status && !['open', 'closed'].includes(theatre.status)) {
+    return res.status(409).json({
+      error: 'Rạp đang chờ duyệt/bị từ chối/đã xoá — dùng khiếu nại, khôi phục hoặc chờ quản trị viên.',
+    });
+  }
   if (Object.prototype.hasOwnProperty.call(req.body || {}, 'hostOverride')) {
     patch.hostOverride =
       req.body.hostOverride && typeof req.body.hostOverride === 'string'
@@ -564,6 +572,15 @@ app.post('/api/theatres/:id/transfer', requireAuth, (req, res) => {
   if (!target) return res.status(400).json({ error: 'Không tìm thấy người dùng với email đó.' });
   if (target.id === theatre.ownerId) {
     return res.status(400).json({ error: 'Rạp đã thuộc người này.' });
+  }
+  if (target.banned) {
+    return res.status(400).json({ error: 'Không thể chuyển cho tài khoản đang bị khoá.' });
+  }
+  const targetOwned = store.data.theatres.filter(
+    (item) => item.ownerId === target.id && !['deleted', 'archived'].includes(item.status),
+  ).length;
+  if (targetOwned >= MAX_THEATRES_PER_USER) {
+    return res.status(400).json({ error: 'Người nhận đã đạt giới hạn số rạp.' });
   }
   store.updateTheatre(theatre.id, { ownerId: target.id });
   rooms.reassignOwner(theatre.id, target.id);
@@ -696,6 +713,9 @@ app.post('/api/theatres/:id/mute', requireAuth, (req, res) => {
 app.post('/api/theatres/:id/report', requireAuth, (req, res) => {
   const theatre = store.findTheatre(String(req.params.id || '').toUpperCase());
   if (!theatre) return res.status(404).json({ error: 'Không tìm thấy rạp.' });
+  if (tooManyAttempts(REPORT_BUCKETS, req.user.id, 5, 60 * 60 * 1000)) {
+    return res.status(429).json({ error: 'Bạn đã gửi quá nhiều báo cáo. Thử lại sau.' });
+  }
   const reason = cleanText(req.body?.reason, 500);
   if (!reason) return res.status(400).json({ error: 'Nhập lý do báo cáo.' });
 
@@ -946,6 +966,12 @@ io.on('connection', (socket) => {
       return reply(ack, { ok: false, error: 'Bạn đang bị tắt chat trong rạp này.' });
     }
 
+    const text = String(payload?.text ?? '').replace(/\s+/g, ' ').trim().slice(0, 500);
+    if (!text) return reply(ack, { ok: false, error: 'Tin nhắn trống.' });
+    if (screenText(text)) {
+      return reply(ack, { ok: false, error: 'Tin nhắn chứa nội dung bị chặn.' });
+    }
+
     if (tooManyAttempts(CHAT_BUCKETS, socket.id, 8, 10000)) {
       const mutes = { ...(theatre.mutedUsers || {}), [user.accountId]: Date.now() + 60000 };
       store.updateTheatre(theatre.id, { mutedUsers: mutes });
@@ -955,12 +981,6 @@ io.on('connection', (socket) => {
         reason: 'spam',
       });
       return reply(ack, { ok: false, error: 'Bạn gửi quá nhanh — bị tắt chat 60 giây.' });
-    }
-
-    const text = String(payload?.text ?? '').replace(/\s+/g, ' ').trim().slice(0, 500);
-    if (!text) return reply(ack, { ok: false, error: 'Tin nhắn trống.' });
-    if (screenText(text)) {
-      return reply(ack, { ok: false, error: 'Tin nhắn chứa nội dung bị chặn.' });
     }
 
     io.to(room.id).emit('chat:message', {

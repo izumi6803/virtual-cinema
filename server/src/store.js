@@ -116,13 +116,13 @@ export class Store {
     this.save();
   }
 
-  deleteSessionsForUser(userId) {
+  deleteSessionsForUser(userId, exceptHash = null) {
     let changed = false;
     for (const [hash, session] of Object.entries(this.data.sessions)) {
-      if (session?.userId === userId) {
-        delete this.data.sessions[hash];
-        changed = true;
-      }
+      if (session?.userId !== userId) continue;
+      if (exceptHash && hash === exceptHash) continue;
+      delete this.data.sessions[hash];
+      changed = true;
     }
     if (changed) this.save();
   }

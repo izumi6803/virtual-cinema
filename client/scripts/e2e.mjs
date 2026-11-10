@@ -136,6 +136,12 @@ try {
   const joinPending = await call(socket1, 'room:join', { theatreId: flaggedId });
   check('chặn join rạp chờ duyệt', joinPending.ok === false && /chờ|duyệt/.test(joinPending.error));
 
+  const bypass = await request('PATCH', `/api/theatres/${flaggedId}`, {
+    token: u1.token,
+    body: { status: 'open' },
+  });
+  check('không thể tự mở rạp chờ duyệt', bypass.status === 409);
+
   // --- reject -> strike ---
   const rej = await request('POST', `/api/admin/theatres/${flaggedId}/review`, {
     token: admin.token,
@@ -190,6 +196,14 @@ try {
     body: { reason: 'Nội dung thử nghiệm' },
   });
   check('gửi báo cáo', report.status === 201);
+  let lastReport;
+  for (let index = 0; index < 5; index += 1) {
+    lastReport = await request('POST', `/api/theatres/${pub.data.theatre.id}/report`, {
+      token: u3.token,
+      body: { reason: `Spam ${index}` },
+    });
+  }
+  check('giới hạn báo cáo', lastReport.status === 429);
 
   // --- moderator can kick ---
   await request('POST', `/api/theatres/${pub.data.theatre.id}/moderators`, {
@@ -284,12 +298,26 @@ try {
   const u5Entry = u5List.data.theatres.find((item) => item.id === tempTheatre.data.theatre.id);
   check('chủ cũ không còn sở hữu', u5Entry && u5Entry.owner.id !== u5.user.id);
 
+  const bannedTransfer = await request('POST', `/api/theatres/${tempTheatre.data.theatre.id}/transfer`, {
+    token: u1.token,
+    body: { email: 'u2@test.io' },
+  });
+  check('không chuyển cho tài khoản khoá', bannedTransfer.status === 400);
+
   // --- change password ---
+  const otherLogin = await request('POST', '/api/auth/login', {
+    body: { email: 'u5@test.io', password: 'password1' },
+  });
+  const otherToken = otherLogin.data.token;
   const pwChange = await request('POST', '/api/account/password', {
     token: u5.token,
     body: { currentPassword: 'password1', newPassword: 'newpassword2' },
   });
   check('đổi mật khẩu', pwChange.status === 200);
+  const revoked = await request('GET', '/api/auth/me', { token: otherToken });
+  check('đổi mật khẩu thu hồi phiên khác', revoked.status === 401);
+  const kept = await request('GET', '/api/auth/me', { token: u5.token });
+  check('giữ phiên hiện tại', kept.status === 200);
   const newLogin = await request('POST', '/api/auth/login', {
     body: { email: 'u5@test.io', password: 'newpassword2' },
   });

@@ -76,6 +76,7 @@ export default function CinemaView({ initialRoom, token, onLeave }) {
       ) {
         return;
       }
+      if (event.target?.closest?.('button, a, [role="button"]')) return;
       const handlers = shortcutRef.current;
       if (!handlers) return;
       if (event.code === 'Space') {
