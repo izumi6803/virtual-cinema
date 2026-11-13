@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import compression from 'compression';
 import cors from 'cors';
 import express from 'express';
 import { Server } from 'socket.io';
@@ -35,12 +36,20 @@ const rooms = new RoomManager();
 
 const app = express();
 app.set('trust proxy', 1);
+app.use(compression());
 app.use(cors({ origin: true }));
 app.use(express.json({ limit: '128kb' }));
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  if (
+    req.path.startsWith('/admin') ||
+    req.path.startsWith('/api/') ||
+    req.path.startsWith('/socket.io/')
+  ) {
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  }
   next();
 });
 app.get('/health', (req, res) =>
@@ -51,7 +60,17 @@ app.get('/health', (req, res) =>
     rooms: rooms.rooms.size,
   }),
 );
-app.use(express.static(clientDist));
+app.use(
+  express.static(clientDist, {
+    setHeaders(res, filePath) {
+      if (filePath.endsWith('index.html') || filePath.endsWith('sw.js')) {
+        res.setHeader('Cache-Control', 'no-cache');
+      } else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      }
+    },
+  }),
+);
 
 const indexFile = path.join(clientDist, 'index.html');
 
@@ -1092,8 +1111,15 @@ const dbFlusher = setInterval(() => {
 dbFlusher.unref?.();
 
 if (fs.existsSync(indexFile)) {
-  app.get('*', (req, res) => res.sendFile(indexFile));
+  app.get(['/', '/index.html', '/admin', '/admin/'], (req, res) => res.sendFile(indexFile));
 }
+
+app.use((req, res) => {
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: 'Không tìm thấy.' });
+  }
+  res.status(404).type('text/plain').send('Không tìm thấy trang.');
+});
 
 app.use((err, req, res, next) => {
   console.error('[http]', err?.message || err);

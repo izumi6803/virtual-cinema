@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useId, useRef } from 'react';
 
 export default function Dialog({ open, title, onClose, children, sheet = false }) {
   const ref = useRef(null);
   const dragRef = useRef(null);
+  const titleId = useId();
 
   useEffect(() => {
     const node = ref.current;
@@ -13,8 +14,9 @@ export default function Dialog({ open, title, onClose, children, sheet = false }
 
   function onPointerDown(event) {
     if (!sheet) return;
-    if (event.target.closest?.('button, a, input, textarea, label')) return;
+    if (!event.target.closest?.('.dialog__handle')) return;
     dragRef.current = event.clientY;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
   }
 
   function onPointerUp(event) {
@@ -27,6 +29,7 @@ export default function Dialog({ open, title, onClose, children, sheet = false }
   return (
     <dialog
       ref={ref}
+      aria-labelledby={titleId}
       className={`dialog ${sheet ? 'dialog--sheet' : ''}`}
       onCancel={(event) => {
         event.preventDefault();
@@ -40,7 +43,7 @@ export default function Dialog({ open, title, onClose, children, sheet = false }
     >
       <div className="dialog__body">
         {sheet ? <span className="dialog__handle" aria-hidden="true" /> : null}
-        <h2>{title}</h2>
+        <h2 id={titleId}>{title}</h2>
         {children}
       </div>
     </dialog>

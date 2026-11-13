@@ -72,6 +72,15 @@ const paths = {
       <path d="M5 15V5a2 2 0 0 1 2-2h8" />
     </>
   ),
+  share: (
+    <>
+      <circle cx="18" cy="5.5" r="2.5" />
+      <circle cx="6" cy="12" r="2.5" />
+      <circle cx="18" cy="18.5" r="2.5" />
+      <path d="M8.2 10.8l7.6-4" />
+      <path d="M8.2 13.2l7.6 4" />
+    </>
+  ),
   exit: (
     <>
       <path d="M14 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h8" />

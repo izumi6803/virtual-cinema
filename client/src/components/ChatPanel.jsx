@@ -11,11 +11,16 @@ function clockLabel(timestamp) {
 export default function ChatPanel({ open, messages, myId, onSend, onClose }) {
   const [text, setText] = useState('');
   const endRef = useRef(null);
+  const inputRef = useRef(null);
 
   useEffect(() => {
     if (!open) return;
     endRef.current?.scrollIntoView({ block: 'end' });
   }, [messages.length, open]);
+
+  useEffect(() => {
+    if (open) inputRef.current?.focus();
+  }, [open]);
 
   function submit(event) {
     event.preventDefault();
@@ -41,7 +46,7 @@ export default function ChatPanel({ open, messages, myId, onSend, onClose }) {
         </button>
       </header>
 
-      <div className="chat__list">
+      <div className="chat__list" role="log" aria-live="polite" aria-relevant="additions">
         {messages.length === 0 ? (
           <p className="chat__empty">Chưa có ai nói gì. Thử chào người bên cạnh xem.</p>
         ) : (
@@ -71,6 +76,7 @@ export default function ChatPanel({ open, messages, myId, onSend, onClose }) {
 
       <form className="chat__form" onSubmit={submit}>
         <input
+          ref={inputRef}
           value={text}
           onChange={(event) => setText(event.target.value)}
           placeholder="Nói với người bên cạnh…"

@@ -60,7 +60,7 @@ export default function AuthScreen({ auth, admin = false }) {
             </li>
             <li>
               <span className="bullet" />
-              Mỗi rạp có một chủ phòng điều khiển phim.
+              Mỗi rạp có một người điều khiển phim.
             </li>
             <li>
               <span className="bullet" />

@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /api/
+Disallow: /socket.io/
+Disallow: /health
+
+Sitemap: https://virtual-cinema-cpat.onrender.com/sitemap.xml

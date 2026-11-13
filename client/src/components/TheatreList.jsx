@@ -60,15 +60,17 @@ export default function TheatreList({ auth, onEnter, initialCode = '' }) {
   const [dialog, setDialog] = useState(null);
   const [dialogValue, setDialogValue] = useState('');
   const [dialogBusy, setDialogBusy] = useState(false);
+  const [dialogError, setDialogError] = useState('');
+  const [listError, setListError] = useState('');
   const autoJoinRef = useRef(false);
 
   const refresh = useCallback(async () => {
     try {
       const data = await api('/api/theatres', { token });
       setTheatres(data.theatres);
-      setError('');
+      setListError('');
     } catch (err) {
-      setError(err.message);
+      setListError(err.message);
     } finally {
       setLoading(false);
     }
@@ -130,6 +132,7 @@ export default function TheatreList({ auth, onEnter, initialCode = '' }) {
   function openDialog(type, data = {}) {
     setDialog({ type, ...data });
     setDialogValue('');
+    setDialogError('');
   }
 
   function closeDialog() {
@@ -141,7 +144,7 @@ export default function TheatreList({ auth, onEnter, initialCode = '' }) {
   async function submitDialog() {
     if (!dialog || dialogBusy) return;
     setDialogBusy(true);
-    setError('');
+    setDialogError('');
     try {
       if (dialog.type === 'close') {
         await api(`/api/theatres/${dialog.theatre.id}`, {
@@ -184,7 +187,7 @@ export default function TheatreList({ auth, onEnter, initialCode = '' }) {
       setDialogValue('');
       refresh();
     } catch (err) {
-      setError(err.message);
+      setDialogError(err.message);
     } finally {
       setDialogBusy(false);
     }
@@ -348,7 +351,7 @@ export default function TheatreList({ auth, onEnter, initialCode = '' }) {
         </h1>
         <p className="lede">
           Vào rạp công khai bên dưới, hoặc nhập mã 6 ký tự để vào rạp riêng. Bạn có thể tự mở rạp
-          của mình và điều khiển phim cho cả phòng.
+          của mình và điều khiển phim cho cả rạp.
         </p>
 
         <form
@@ -370,6 +373,10 @@ export default function TheatreList({ auth, onEnter, initialCode = '' }) {
             {joining ? 'Đang vào…' : 'Vào bằng mã'}
           </button>
         </form>
+
+        <a className="link-cta" href="#create">
+          Hoặc tạo rạp của bạn
+        </a>
 
         {notice ? <p className="notice">{notice}</p> : null}
         {error ? (
@@ -396,8 +403,23 @@ export default function TheatreList({ auth, onEnter, initialCode = '' }) {
                 </div>
               ))}
             </div>
+          ) : listError && theatres.length === 0 ? (
+            <div className="empty empty--error">
+              <p>Không tải được danh sách rạp. {listError}</p>
+              <button
+                type="button"
+                className="btn btn--inline"
+                onClick={() => {
+                  setLoading(true);
+                  setListError('');
+                  refresh();
+                }}
+              >
+                Thử lại
+              </button>
+            </div>
           ) : theatres.length === 0 ? (
-            <p className="empty">Chưa có rạp nào. Tạo rạp đầu tiên ở bên phải.</p>
+            <p className="empty">Chưa có rạp nào. Tạo rạp đầu tiên của bạn.</p>
           ) : (
             <div className="theatre-grid">
               {theatres.map((theatre) => {
@@ -527,7 +549,7 @@ export default function TheatreList({ auth, onEnter, initialCode = '' }) {
         </section>
 
         <div className="theatres__side">
-        <aside className="create-card">
+        <aside className="create-card" id="create">
           <h2>Tạo rạp mới</h2>
           <p className="create-card__lede">
             Đặt tên, chọn nguồn phim và mức riêng tư. Hệ thống sẽ kiểm tra metadata phim trước khi
@@ -721,6 +743,12 @@ export default function TheatreList({ auth, onEnter, initialCode = '' }) {
         ) : null}
 
         <p className="dialog__note">{dialog ? DIALOG_NOTES[dialog.type] : ''}</p>
+
+        {dialogError ? (
+          <p className="error" role="alert">
+            {dialogError}
+          </p>
+        ) : null}
 
         <div className="dialog__actions">
           <button type="button" className="btn" onClick={closeDialog} disabled={dialogBusy}>

@@ -10,7 +10,7 @@
     "dev:client": "npm --prefix client run dev",
     "build": "npm --prefix client run build",
     "start": "npm --prefix server start",
-    "test": "npm --prefix client run test:e2e"
+    "test": "npm run build && npm --prefix client run test:e2e"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

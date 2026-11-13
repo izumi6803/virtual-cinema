@@ -42,7 +42,7 @@ export default function ControlBar({
         className="dock__play"
         onClick={onTogglePlay}
         disabled={!isHost}
-        title={isHost ? (playing ? 'Tạm dừng' : 'Phát') : 'Chỉ chủ phòng điều khiển được'}
+        title={isHost ? (playing ? 'Tạm dừng' : 'Phát') : 'Chỉ người điều khiển được phát hoặc tạm dừng'}
         aria-label={playing ? 'Tạm dừng' : 'Phát'}
       >
         <Icon name={playing ? 'pause' : 'play'} size={20} />
@@ -106,8 +106,8 @@ export default function ControlBar({
             title={muted ? 'Bỏ tắt tiếng' : 'Tắt tiếng micro'}
             aria-label={muted ? 'Bỏ tắt tiếng' : 'Tắt tiếng micro'}
           >
-            <span className="live-dot" />
-            {muted ? 'Đang tắt' : 'Đang nói'}
+          <span className="live-dot" />
+          <span className="dock-btn__text">{muted ? 'Đang tắt' : 'Đang nói'}</span>
           </button>
         ) : null}
 

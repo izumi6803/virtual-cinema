@@ -372,6 +372,45 @@ try {
   });
   check('chặn socket token sai', unauthorized);
 
+  const robots = await fetch(`${BASE}/robots.txt`);
+  const robotsText = await robots.text();
+  check('robots.txt + sitemap', robots.status === 200 && robotsText.includes('Sitemap:'));
+
+  const sitemap = await fetch(`${BASE}/sitemap.xml`);
+  const sitemapText = await sitemap.text();
+  check('sitemap.xml', sitemap.status === 200 && sitemapText.includes('<urlset'));
+
+  const home = await fetch(`${BASE}/`);
+  const homeHtml = await home.text();
+  check(
+    'SEO meta + JSON-LD',
+    home.status === 200 &&
+      homeHtml.includes('og:title') &&
+      homeHtml.includes('application/ld+json') &&
+      homeHtml.includes('rel="canonical"'),
+  );
+
+  const missingPage = await fetch(`${BASE}/khong-ton-tai`);
+  check('404 cho đường dẫn lạ', missingPage.status === 404);
+
+  const jsonLd = homeHtml.match(
+    /<script type="application\/ld\+json">([\s\S]*?)<\/script>/,
+  );
+  let jsonLdOk = false;
+  try {
+    JSON.parse(jsonLd[1]);
+    jsonLdOk = true;
+  } catch {
+    jsonLdOk = false;
+  }
+  check('JSON-LD hợp lệ', jsonLdOk);
+
+  const adminPage = await fetch(`${BASE}/admin`);
+  check(
+    'admin noindex',
+    adminPage.status === 200 && (adminPage.headers.get('x-robots-tag') || '').includes('noindex'),
+  );
+
   socket1.disconnect();
   socket3b.disconnect();
 } catch (error) {

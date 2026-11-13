@@ -38,7 +38,11 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
   const [transferEmail, setTransferEmail] = useState('');
   const [manageBusy, setManageBusy] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [netState, setNetState] = useState('online');
+  const [syncState, setSyncState] = useState('ok');
+  const [dialogError, setDialogError] = useState('');
   const autoSeatRef = useRef(false);
+  const lastSeatRef = useRef(null);
 
   useWakeLock(room.video.playing);
 
@@ -161,18 +165,26 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
     const state = { disconnected: false };
     const onDisconnect = () => {
       state.disconnected = true;
+      autoSeatRef.current = false;
+      setNetState('offline');
     };
     const onConnect = () => {
       if (!state.disconnected) return;
       state.disconnected = false;
+      setNetState('reconnecting');
       const current = roomRef.current;
-      if (!current?.theatreId) return;
+      if (!current?.theatreId) {
+        setNetState('online');
+        return;
+      }
       socket.timeout(6000).emit('room:join', { theatreId: current.theatreId }, (error, response) => {
         if (error || !response?.ok) {
+          setNetState('offline');
           setToast('Không vào lại được rạp.');
           setTimeout(onLeave, 1200);
           return;
         }
+        setNetState('online');
         setRoom(response.room);
       });
     };
@@ -183,6 +195,17 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
       socket.off('connect', onConnect);
     };
   }, [onLeave]);
+
+  useEffect(() => {
+    const onOnline = () => setNetState(socket.connected ? 'online' : 'reconnecting');
+    const onOffline = () => setNetState('offline');
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, []);
 
   useEffect(() => {
     const onClosed = (payload) => {
@@ -280,18 +303,29 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
   }, [room]);
 
   useEffect(() => {
+    if (mySeat) lastSeatRef.current = mySeat;
+  }, [mySeat]);
+
+  useEffect(() => {
     if (mySeat || autoSeatRef.current || room.users.length === 0) return;
-    autoSeatRef.current = true;
-    for (let row = 0; row < SEAT_ROWS; row += 1) {
-      for (let col = 0; col < SEAT_COLS; col += 1) {
-        const seatId = `${row}-${col}`;
-        if (takenSeats.has(seatId)) continue;
-        socket.emit('seat:claim', { seatId }, (response) => {
-          if (response && !response.ok) autoSeatRef.current = false;
-        });
-        return;
+    let seatId = lastSeatRef.current;
+    if (!seatId || takenSeats.has(seatId)) {
+      seatId = null;
+      for (let row = 0; row < SEAT_ROWS && !seatId; row += 1) {
+        for (let col = 0; col < SEAT_COLS; col += 1) {
+          const candidate = `${row}-${col}`;
+          if (!takenSeats.has(candidate)) {
+            seatId = candidate;
+            break;
+          }
+        }
       }
     }
+    if (!seatId) return;
+    autoSeatRef.current = true;
+    socket.emit('seat:claim', { seatId }, (response) => {
+      if (response && !response.ok) autoSeatRef.current = false;
+    });
   }, [mySeat, room.users.length, takenSeats]);
 
 
@@ -370,10 +404,18 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
       setDuration(player.getDuration());
 
       const current = roomRef.current;
-      if (!current || current.hostId === socket.id || !current.video.playing) return;
+      if (!current) return;
+      if (current.hostId === socket.id || !current.video.playing) {
+        setSyncState((previous) => (previous === 'ok' ? previous : 'ok'));
+        return;
+      }
+
       const target = effectiveTime(current.video);
       const actual = player.getTime();
-      if (Math.abs(actual - target) > 1.4) player.seek(target);
+      const drifting = Math.abs(actual - target) > 1.4;
+      const next = drifting || !player.isPlaying() ? 'syncing' : 'ok';
+      setSyncState((previous) => (previous === next ? previous : next));
+      if (drifting) player.seek(target);
       if (!player.isPlaying()) player.play();
     }, 500);
     return () => clearInterval(timer);
@@ -450,13 +492,31 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
     voiceRef.current?.setMuted(next);
   }
 
-  async function copyCode() {
+  function inviteUrl() {
+    return `${window.location.origin}${window.location.pathname}#/r/${room.id}`;
+  }
+
+  async function shareRoom() {
+    const url = inviteUrl();
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: room.name,
+          text: `Vào rạp "${room.name}" trên Rạp Ảo`,
+          url,
+        });
+        return;
+      } catch (err) {
+        if (err?.name === 'AbortError') return;
+      }
+    }
     try {
-      await navigator.clipboard.writeText(room.id);
+      await navigator.clipboard.writeText(url);
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
+      setToast('Đã chép liên kết mời.');
     } catch {
-      setToast(`Mã phòng: ${room.id}`);
+      setToast(`Liên kết mời: ${url}`);
     }
   }
 
@@ -483,6 +543,7 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
     event?.preventDefault();
     if (reportBusy || !reportText.trim()) return;
     setReportBusy(true);
+    setDialogError('');
     try {
       await api(`/api/theatres/${room.id}/report`, {
         method: 'POST',
@@ -493,7 +554,7 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
       setReportText('');
       setToast('Đã gửi báo cáo. Cảm ơn bạn.');
     } catch (err) {
-      setToast(err.message);
+      setDialogError(err.message);
     } finally {
       setReportBusy(false);
     }
@@ -503,6 +564,7 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
     const target = personTarget;
     if (!target || manageBusy) return;
     setManageBusy(true);
+    setDialogError('');
     try {
       if (action === 'mute' || action === 'unmute') {
         await api(`/api/theatres/${room.id}/mute`, {
@@ -533,7 +595,7 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
       setToast('Đã cập nhật.');
       setPersonTarget(null);
     } catch (err) {
-      setToast(err.message);
+      setDialogError(err.message);
     } finally {
       setManageBusy(false);
     }
@@ -542,6 +604,7 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
   async function closeRoom() {
     if (manageBusy) return;
     setManageBusy(true);
+    setDialogError('');
     try {
       await api(`/api/theatres/${room.id}`, {
         method: 'PATCH',
@@ -550,7 +613,7 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
       });
       setCloseOpen(false);
     } catch (err) {
-      setToast(err.message);
+      setDialogError(err.message);
     } finally {
       setManageBusy(false);
     }
@@ -560,6 +623,7 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
     event?.preventDefault();
     if (manageBusy || !transferEmail.trim()) return;
     setManageBusy(true);
+    setDialogError('');
     try {
       await api(`/api/theatres/${room.id}/transfer`, {
         method: 'POST',
@@ -571,7 +635,7 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
       setTransferEmail('');
       setToast('Đã chuyển nhượng rạp.');
     } catch (err) {
-      setToast(err.message);
+      setDialogError(err.message);
     } finally {
       setManageBusy(false);
     }
@@ -600,6 +664,13 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
 
   return (
     <div className="cinema" onPointerDownCapture={nudgePlayback}>
+      {netState !== 'online' ? (
+        <div className="net-banner" role="status" aria-live="polite">
+          <span className="net-banner__dot" />
+          {netState === 'offline' ? 'Mất kết nối — đang thử lại…' : 'Đang kết nối lại…'}
+        </div>
+      ) : null}
+
       <div className="stage">
         <canvas ref={canvasRef} className="stage__canvas" />
         <div className="stage__overlay-host" ref={overlayHostRef} />
@@ -612,8 +683,27 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
         </div>
 
         <div className="hud__meta">
+          <button
+            type="button"
+            className="people-stack"
+            onClick={() => setPeopleOpen(true)}
+            aria-label={`${room.users.length} người trong rạp, ${voiceCount} đang nói`}
+          >
+            {room.users.slice(0, 3).map((person) => (
+              <span
+                key={person.id}
+                className={`people-stack__avatar ${person.speaking ? 'is-speaking' : ''}`}
+                title={person.name}
+              >
+                {person.name.slice(0, 1).toUpperCase()}
+              </span>
+            ))}
+            {room.users.length > 3 ? (
+              <span className="people-stack__more">+{room.users.length - 3}</span>
+            ) : null}
+          </button>
           <span className={`chip ${isHost ? 'chip--host' : ''}`}>
-            {isHost ? 'Chủ phòng' : 'Khán giả'}
+            {isHost ? 'Người điều khiển' : 'Khán giả'}
           </span>
           <span className="chip chip--seat">
             <Icon name="seat" size={14} />
@@ -622,11 +712,12 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
           <button
             type="button"
             className="icon-btn"
-            onClick={copyCode}
-            aria-label={`Sao chép mã rạp ${room.id}`}
+            onClick={shareRoom}
+            title="Mời vào rạp"
+            aria-label="Mời vào rạp"
           >
-            <Icon name="copy" size={15} />
-            <span className="hud__label">{copied ? 'Đã chép' : room.id}</span>
+            <Icon name="share" size={15} />
+            <span className="hud__label">{copied ? 'Đã chép' : 'Mời'}</span>
           </button>
           <button
             type="button"
@@ -641,7 +732,10 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
           <button
             type="button"
             className="icon-btn"
-            onClick={() => setReportOpen(true)}
+            onClick={() => {
+              setDialogError('');
+              setReportOpen(true);
+            }}
             title="Báo cáo rạp"
             aria-label="Báo cáo rạp"
           >
@@ -672,15 +766,23 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
         </div>
       ) : null}
 
-      <VoiceStatus
-        voiceRef={voiceRef}
-        micOn={micOn}
-        muted={muted}
-        onResume={async () => {
-          await voiceRef.current?.resume();
-          voiceRef.current?.playTestTone();
-        }}
-      />
+      {!chatOpen ? (
+        <VoiceStatus
+          voiceRef={voiceRef}
+          micOn={micOn}
+          muted={muted}
+          onResume={async () => {
+            await voiceRef.current?.resume();
+            voiceRef.current?.playTestTone();
+          }}
+        />
+      ) : null}
+
+      {!isHost && syncState === 'syncing' ? (
+        <div className="sync-status" role="status">
+          Đang đồng bộ phim…
+        </div>
+      ) : null}
 
       {chatOpen ? (
         <button
@@ -767,6 +869,11 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
           />
         </label>
         <p className="dialog__note">Báo cáo được gửi tới quản trị viên.</p>
+        {dialogError ? (
+          <p className="error" role="alert">
+            {dialogError}
+          </p>
+        ) : null}
         <div className="dialog__actions">
           <button
             type="button"
@@ -799,9 +906,10 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
             const meta = [
               seatLabel(person.seatId),
               person.accountId === room.ownerId ? 'Chủ rạp' : '',
-              person.id === room.hostId ? 'Chủ phòng' : '',
+              person.id === room.hostId ? 'Người điều khiển' : '',
               (room.moderators || []).includes(person.accountId) ? 'Điều phối' : '',
               isMe ? 'Bạn' : '',
+              person.speaking ? 'Đang nói' : '',
             ]
               .filter(Boolean)
               .join(' · ');
@@ -821,7 +929,10 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
                   <button
                     type="button"
                     className="people__more"
-                    onClick={() => setPersonTarget(person)}
+                    onClick={() => {
+                      setDialogError('');
+                      setPersonTarget(person);
+                    }}
                     aria-label={`Tuỳ chọn cho ${person.name}`}
                   >
                     ⋯
@@ -836,13 +947,23 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
           <div className="people__manage">
             <h3>Quản lý rạp</h3>
             <div className="dialog__actions">
-              <button type="button" className="btn" onClick={() => setTransferOpen(true)}>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  setDialogError('');
+                  setTransferOpen(true);
+                }}
+              >
                 Chuyển nhượng
               </button>
               <button
                 type="button"
                 className="btn btn--danger"
-                onClick={() => setCloseOpen(true)}
+                onClick={() => {
+                  setDialogError('');
+                  setCloseOpen(true);
+                }}
               >
                 Đóng rạp
               </button>
@@ -864,6 +985,11 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
         sheet
       >
         <p className="dialog__note">{personTarget ? seatLabel(personTarget.seatId) : ''}</p>
+        {dialogError ? (
+          <p className="error" role="alert">
+            {dialogError}
+          </p>
+        ) : null}
         <div className="person-actions">
           <button
             type="button"
@@ -921,6 +1047,11 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
         <p className="dialog__note">
           Mọi người sẽ được đưa ra khỏi rạp. Bạn có thể mở lại rạp trong Sảnh rạp.
         </p>
+        {dialogError ? (
+          <p className="error" role="alert">
+            {dialogError}
+          </p>
+        ) : null}
         <div className="dialog__actions">
           <button
             type="button"
@@ -957,6 +1088,11 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
           />
         </label>
         <p className="dialog__note">Bạn sẽ không còn là chủ rạp này.</p>
+        {dialogError ? (
+          <p className="error" role="alert">
+            {dialogError}
+          </p>
+        ) : null}
         <div className="dialog__actions">
           <button
             type="button"
