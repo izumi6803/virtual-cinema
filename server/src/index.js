@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import compression from 'compression';
 import cors from 'cors';
 import express from 'express';
+import multer from 'multer';
 import { Server } from 'socket.io';
 import {
   cleanDisplayName,
@@ -29,6 +30,33 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin12345';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const clientDist = path.resolve(here, '../../client/dist');
 const dataDir = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.resolve(here, '../data');
+const uploadDir = path.join(dataDir, 'uploads');
+fs.mkdirSync(uploadDir, { recursive: true });
+const uploadMaxMb = Math.min(500, Math.max(1, Number(process.env.UPLOAD_MAX_MB) || 50));
+const VIDEO_EXTENSIONS = {
+  'video/mp4': 'mp4',
+  'video/webm': 'webm',
+  'video/quicktime': 'mov',
+  'video/x-m4v': 'm4v',
+};
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: uploadDir,
+    filename: (req, file, cb) => {
+      const mime = String(file.mimetype || '').split(';')[0].toLowerCase();
+      const extension = VIDEO_EXTENSIONS[mime];
+      cb(null, `${randomUUID()}.${extension || 'mp4'}`);
+    },
+  }),
+  limits: { fileSize: uploadMaxMb * 1024 * 1024, files: 1 },
+  fileFilter: (req, file, cb) => {
+    const mime = String(file.mimetype || '').split(';')[0].toLowerCase();
+    if (!VIDEO_EXTENSIONS[mime]) {
+      return cb(new Error('Chỉ nhận video MP4, WebM hoặc MOV.'));
+    }
+    cb(null, true);
+  },
+});
 
 const store = new Store(path.join(dataDir, 'db.json'));
 const metrics = new Metrics(path.join(dataDir, 'stats.json'));
@@ -68,6 +96,19 @@ app.use(
       } else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
         res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
       }
+    },
+  }),
+);
+
+app.use(
+  '/uploads',
+  express.static(uploadDir, {
+    maxAge: '365d',
+    immutable: true,
+    setHeaders(res) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      res.setHeader('X-Robots-Tag', 'noindex, nofollow');
     },
   }),
 );
@@ -235,6 +276,7 @@ const MAX_THEATRES_PER_USER = 5;
 const CHAT_BUCKETS = new Map();
 const JOIN_BUCKETS = new Map();
 const REPORT_BUCKETS = new Map();
+const UPLOAD_BUCKETS = new Map();
 
 function tooManyAttempts(map, key, max, windowMs) {
   const now = Date.now();
@@ -440,6 +482,25 @@ app.post('/api/account/adult', requireAuth, (req, res) => {
   store.updateUser(req.user.id, { adultConfirmed: confirmed });
   addAudit(req.user, 'adult_confirm', { confirmed });
   res.json({ ok: true, user: publicUser(store.findUserById(req.user.id)) });
+});
+
+app.post('/api/uploads', requireAuth, (req, res) => {
+  if (tooManyAttempts(UPLOAD_BUCKETS, req.user.id, 8, 60 * 60 * 1000)) {
+    return res.status(429).json({ error: 'Bạn tải video quá nhiều lần. Thử lại sau.' });
+  }
+  upload.single('video')(req, res, (error) => {
+    if (error) {
+      const tooLarge = error.code === 'LIMIT_FILE_SIZE';
+      return res.status(tooLarge ? 413 : 400).json({
+        error: tooLarge
+          ? `Video tối đa ${uploadMaxMb}MB.`
+          : error.message || 'Không tải được video.',
+      });
+    }
+    if (!req.file) return res.status(400).json({ error: 'Chưa chọn video.' });
+    addAudit(req.user, 'video_upload', { size: req.file.size, file: req.file.filename });
+    res.status(201).json({ url: `/uploads/${req.file.filename}`, size: req.file.size });
+  });
 });
 
 /* --------------------------------------------------------------- Theatres */
@@ -1113,9 +1174,34 @@ function leaveRoom(socket) {
   io.to(result.room.id).emit('system', { text: `${result.name} đã rời rạp.` });
 }
 
+function sweepUploads() {
+  const referenced = new Set(
+    store.data.theatres
+      .map((theatre) => theatre.video?.src)
+      .filter((src) => typeof src === 'string' && src.startsWith('/uploads/')),
+  );
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  let files = [];
+  try {
+    files = fs.readdirSync(uploadDir);
+  } catch {
+    return;
+  }
+  for (const file of files) {
+    if (referenced.has(`/uploads/${file}`)) continue;
+    const fullPath = path.join(uploadDir, file);
+    try {
+      if (fs.statSync(fullPath).mtimeMs < cutoff) fs.unlinkSync(fullPath);
+    } catch {
+      // ignore unreadable files
+    }
+  }
+}
+
 const sweeper = setInterval(() => {
   rooms.sweep();
   sweepTheatres();
+  sweepUploads();
   store.pruneSessions();
   store.save();
 }, 10 * 60 * 1000);

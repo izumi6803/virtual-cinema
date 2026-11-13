@@ -321,6 +321,23 @@ button {
   box-shadow: 0 0 0 3px rgba(240, 180, 106, 0.13);
 }
 
+.field input[type='file'] {
+  padding: 9px 12px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.field input[type='file']::file-selector-button {
+  margin-right: 10px;
+  padding: 7px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--cream);
+  font: inherit;
+  cursor: pointer;
+}
+
 .field textarea {
   width: 100%;
   min-height: 92px;
@@ -350,6 +367,10 @@ button {
   border: 1px solid var(--line);
   border-radius: 10px;
   background: rgba(0, 0, 0, 0.3);
+}
+
+.segmented--3 {
+  grid-template-columns: repeat(3, 1fr);
 }
 
 .segmented button {

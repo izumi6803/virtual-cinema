@@ -41,6 +41,7 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
   const [netState, setNetState] = useState('online');
   const [syncState, setSyncState] = useState('ok');
   const [dialogError, setDialogError] = useState('');
+  const [notice, setNotice] = useState(null);
   const autoSeatRef = useRef(false);
   const lastSeatRef = useRef(null);
 
@@ -180,8 +181,11 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
       socket.timeout(6000).emit('room:join', { theatreId: current.theatreId }, (error, response) => {
         if (error || !response?.ok) {
           setNetState('offline');
-          setToast('Không vào lại được rạp.');
-          setTimeout(onLeave, 1200);
+          setNotice({
+            title: 'Không vào lại được rạp',
+            message: 'Kết nối đã bị gián đoạn. Thử lại hoặc quay về sảnh rạp.',
+            retry: true,
+          });
           return;
         }
         setNetState('online');
@@ -209,21 +213,25 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
 
   useEffect(() => {
     const onClosed = (payload) => {
-      setToast(payload?.reason || 'Rạp đã đóng.');
-      setTimeout(onLeave, 1200);
+      setNotice({
+        title: 'Rạp đã đóng',
+        message: payload?.reason || 'Người điều khiển đã đóng rạp.',
+      });
     };
     socket.on('room:closed', onClosed);
     return () => socket.off('room:closed', onClosed);
-  }, [onLeave]);
+  }, []);
 
   useEffect(() => {
     const onKicked = (payload) => {
-      setToast(payload?.reason || 'Bạn đã bị đưa ra khỏi rạp.');
-      setTimeout(onLeave, 1200);
+      setNotice({
+        title: 'Bạn đã ra khỏi rạp',
+        message: payload?.reason || 'Bạn đã bị đưa ra khỏi rạp.',
+      });
     };
     socket.on('room:kicked', onKicked);
     return () => socket.off('room:kicked', onKicked);
-  }, [onLeave]);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -659,6 +667,32 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
     if (roomRef.current.video.playing && !player.isPlaying()) player.play();
   }
 
+  function closeNotice() {
+    setNotice(null);
+    onLeave();
+  }
+
+  function retryJoin() {
+    const current = roomRef.current;
+    if (!current?.theatreId) {
+      closeNotice();
+      return;
+    }
+    socket.timeout(6000).emit('room:join', { theatreId: current.theatreId }, (error, response) => {
+      if (error || !response?.ok) {
+        setNotice({
+          title: 'Không vào lại được rạp',
+          message: response?.error || 'Máy chủ không phản hồi.',
+          retry: true,
+        });
+        return;
+      }
+      setNotice(null);
+      setNetState('online');
+      setRoom(response.room);
+    });
+  }
+
   function handleLeave() {
     voiceRef.current?.destroy();
     voiceRef.current = null;
@@ -1054,8 +1088,7 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
         </div>
       </Dialog>
 
-      <Dialog open={closeOpen} title="Đóng rạp" onClose={() => setCloseOpen(false)}>
-        <p className="dialog__note">
+      <Dialog open={closeOpen} title="Đóng rạp" onClose={() => setCloseOpen(false)}>        <p className="dialog__note">
           Mọi người sẽ được đưa ra khỏi rạp. Bạn có thể mở lại rạp trong Sảnh rạp.
         </p>
         {dialogError ? (
@@ -1120,6 +1153,20 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
             disabled={manageBusy || !transferEmail.trim()}
           >
             {manageBusy ? 'Đang xử lý…' : 'Chuyển nhượng'}
+          </button>
+        </div>
+      </Dialog>
+
+      <Dialog open={!!notice} title={notice?.title || ''} onClose={closeNotice}>
+        <p className="dialog__note">{notice?.message}</p>
+        <div className="dialog__actions">
+          {notice?.retry ? (
+            <button type="button" className="btn" onClick={retryJoin}>
+              Thử lại
+            </button>
+          ) : null}
+          <button type="button" className="btn btn--primary" onClick={closeNotice}>
+            Về sảnh rạp
           </button>
         </div>
       </Dialog>

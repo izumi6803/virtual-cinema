@@ -58,6 +58,8 @@ export default function TheatreList({ auth, onEnter, initialCode = '' }) {
   const [adultConfirmed, setAdultConfirmed] = useState(Boolean(user.adultConfirmed));
   const [currentPw, setCurrentPw] = useState('');
   const [newPw, setNewPw] = useState('');
+  const [videoFile, setVideoFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
   const [dialog, setDialog] = useState(null);
   const [dialogValue, setDialogValue] = useState('');
   const [dialogBusy, setDialogBusy] = useState(false);
@@ -200,12 +202,55 @@ export default function TheatreList({ auth, onEnter, initialCode = '' }) {
     }
   }
 
+  async function uploadVideo(file) {
+    const body = new FormData();
+    body.append('video', file);
+    const response = await fetch('/api/uploads', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'Không tải được video.');
+    return data.url;
+  }
+
+  function pickVideo(event) {
+    const file = event.target.files?.[0] || null;
+    if (!file) {
+      setVideoFile(null);
+      return;
+    }
+    if (!file.type.startsWith('video/')) {
+      setVideoFile(null);
+      setFormError({ message: 'Chọn tệp video MP4, WebM hoặc MOV.', reason: '' });
+      return;
+    }
+    if (file.size > 50 * 1024 * 1024) {
+      setVideoFile(null);
+      setFormError({ message: 'Video tối đa 50MB.', reason: '' });
+      return;
+    }
+    setFormError({ message: '', reason: '' });
+    setVideoFile(file);
+  }
+
   async function createTheatre(event) {
     event.preventDefault();
     if (creating) return;
     setCreating(true);
     setFormError({ message: '', reason: '' });
     try {
+      let src = form.src.trim();
+      if (form.kind === 'upload') {
+        if (!videoFile) throw new Error('Chọn video để tải lên.');
+        setUploading(true);
+        try {
+          src = await uploadVideo(videoFile);
+        } finally {
+          setUploading(false);
+        }
+      }
       const data = await api('/api/theatres', {
         method: 'POST',
         token,
@@ -214,7 +259,7 @@ export default function TheatreList({ auth, onEnter, initialCode = '' }) {
           description: form.description.trim(),
           visibility: form.visibility,
           mature: form.mature,
-          video: { kind: form.kind, src: form.src.trim() },
+          video: { kind: form.kind === 'youtube' ? 'youtube' : 'html5', src },
         },
       });
       if (data.theatre.status === 'pending_review') {
@@ -223,6 +268,7 @@ export default function TheatreList({ auth, onEnter, initialCode = '' }) {
         setNotice(`Đã tạo rạp ${data.theatre.id}.`);
       }
       setForm((previous) => ({ ...previous, name: '', description: '' }));
+      setVideoFile(null);
       await refresh();
       if (data.theatre.status === 'open') joinTheatre(data.theatre.id);
     } catch (err) {
@@ -320,11 +366,13 @@ export default function TheatreList({ auth, onEnter, initialCode = '' }) {
   }
 
   function switchKind(kind) {
+    if (kind !== 'upload') setVideoFile(null);
     setForm((previous) => ({
       ...previous,
       kind,
-      src: kind === 'youtube' ? SAMPLE_YOUTUBE : SAMPLE_MP4,
+      src: kind === 'youtube' ? SAMPLE_YOUTUBE : kind === 'html5' ? SAMPLE_MP4 : '',
     }));
+    setFormError({ message: '', reason: '' });
   }
 
   return (
@@ -592,7 +640,7 @@ export default function TheatreList({ auth, onEnter, initialCode = '' }) {
 
             <div className="field">
               <span>Nguồn phim</span>
-              <div className="segmented">
+              <div className="segmented segmented--3">
                 <button
                   type="button"
                   className={form.kind === 'html5' ? 'is-active' : ''}
@@ -607,17 +655,41 @@ export default function TheatreList({ auth, onEnter, initialCode = '' }) {
                 >
                   YouTube
                 </button>
+                <button
+                  type="button"
+                  className={form.kind === 'upload' ? 'is-active' : ''}
+                  onClick={() => switchKind('upload')}
+                >
+                  Tải lên
+                </button>
               </div>
             </div>
 
-            <label className="field">
-              <span>{form.kind === 'youtube' ? 'Đường dẫn YouTube' : 'Đường dẫn video'}</span>
-              <input
-                value={form.src}
-                onChange={(event) => setForm({ ...form, src: event.target.value })}
-                spellCheck={false}
-              />
-            </label>
+            {form.kind === 'upload' ? (
+              <>
+                <label className="field">
+                  <span>Tệp video</span>
+                  <input
+                    type="file"
+                    accept="video/mp4,video/webm,video/quicktime,video/x-m4v"
+                    onChange={pickVideo}
+                  />
+                </label>
+                <p className="hint">
+                  Tối đa 50MB. Video lưu tạm trên máy chủ và có thể mất khi triển khai lại. Chỉ
+                  tải nội dung bạn có quyền chia sẻ.
+                </p>
+              </>
+            ) : (
+              <label className="field">
+                <span>{form.kind === 'youtube' ? 'Đường dẫn YouTube' : 'Đường dẫn video'}</span>
+                <input
+                  value={form.src}
+                  onChange={(event) => setForm({ ...form, src: event.target.value })}
+                  spellCheck={false}
+                />
+              </label>
+            )}
 
             <div className="field">
               <span>Chế độ</span>
@@ -656,7 +728,11 @@ export default function TheatreList({ auth, onEnter, initialCode = '' }) {
             ) : null}
 
             <button className="btn btn--primary" type="submit" disabled={creating}>
-              {creating ? 'Đang kiểm duyệt…' : 'Tạo và vào rạp'}
+              {uploading
+                ? 'Đang tải video…'
+                : creating
+                  ? 'Đang kiểm duyệt…'
+                  : 'Tạo và vào rạp'}
             </button>
           </form>
         </aside>

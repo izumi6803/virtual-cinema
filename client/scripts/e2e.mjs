@@ -113,6 +113,31 @@ try {
   });
   check('tạo rạp công khai (open)', pub.status === 201 && pub.data.theatre.status === 'open');
 
+  // --- video upload ---
+  const videoForm = new FormData();
+  videoForm.append(
+    'video',
+    new Blob([new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112])], { type: 'video/mp4' }),
+    'sample.mp4',
+  );
+  const uploadResponse = await fetch(`${BASE}/api/uploads`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${u1.token}` },
+    body: videoForm,
+  });
+  const uploadData = await uploadResponse.json().catch(() => ({}));
+  check(
+    'tải video lên',
+    uploadResponse.status === 201 && Boolean(uploadData.url?.startsWith('/uploads/')),
+  );
+  if (uploadData.url) {
+    const uploaded = await fetch(`${BASE}${uploadData.url}`);
+    check(
+      'video tải lên phục vụ được',
+      uploaded.status === 200 && (uploaded.headers.get('content-type') || '').includes('video/mp4'),
+    );
+  }
+
   // --- blocked by banned domain ---
   const hard = await request('POST', '/api/theatres', {
     token: u1.token,
