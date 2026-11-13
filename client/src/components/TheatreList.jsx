@@ -55,6 +55,7 @@ export default function TheatreList({ auth, onEnter, initialCode = '' }) {
     mature: false,
   });
   const [accountMsg, setAccountMsg] = useState('');
+  const [adultConfirmed, setAdultConfirmed] = useState(Boolean(user.adultConfirmed));
   const [currentPw, setCurrentPw] = useState('');
   const [newPw, setNewPw] = useState('');
   const [dialog, setDialog] = useState(null);
@@ -175,7 +176,13 @@ export default function TheatreList({ auth, onEnter, initialCode = '' }) {
         auth.logout();
         return;
       } else if (dialog.type === 'adult') {
-        await api('/api/account/adult', { method: 'POST', token, body: { confirmed: true } });
+        const data = await api('/api/account/adult', {
+          method: 'POST',
+          token,
+          body: { confirmed: true },
+        });
+        if (data.user) auth.updateUser(data.user);
+        setAdultConfirmed(true);
         const code = dialog.code;
         setDialog(null);
         setDialogValue('');
@@ -280,7 +287,13 @@ export default function TheatreList({ auth, onEnter, initialCode = '' }) {
 
   async function confirmAdultAccount() {
     try {
-      await api('/api/account/adult', { method: 'POST', token, body: { confirmed: true } });
+      const data = await api('/api/account/adult', {
+        method: 'POST',
+        token,
+        body: { confirmed: true },
+      });
+      if (data.user) auth.updateUser(data.user);
+      setAdultConfirmed(true);
       setAccountMsg('Đã xác nhận đủ 18 tuổi.');
     } catch (err) {
       setAccountMsg(err.message);
@@ -646,17 +659,13 @@ export default function TheatreList({ auth, onEnter, initialCode = '' }) {
               {creating ? 'Đang kiểm duyệt…' : 'Tạo và vào rạp'}
             </button>
           </form>
-
-          <p className="hint">
-            Kiểm duyệt tự động: blocklist local, và OpenAI nếu đã cấu hình `OPENAI_API_KEY`.
-          </p>
         </aside>
 
         <aside className="account-card">
           <h2>Tài khoản</h2>
           <p className="account-card__email">{user.email}</p>
           <div className="account-card__row">
-            {user.adultConfirmed ? (
+            {adultConfirmed ? (
               <span className="state state--live">Đã xác nhận 18+</span>
             ) : (
               <button type="button" className="card-btn" onClick={confirmAdultAccount}>

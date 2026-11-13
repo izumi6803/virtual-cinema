@@ -283,6 +283,16 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
 
     spawn();
     const timer = setInterval(() => voiceRef.current?.update(), 60);
+    let lastLoud = 0;
+    const speakTimer = setInterval(() => {
+      const voice = voiceRef.current;
+      if (!voice) return;
+      const now = performance.now();
+      const live = voice.enabled && !voice.muted;
+      const level = live ? voice.getLevels().local : 0;
+      if (level > 0.02) lastLoud = now;
+      voice.setSpeaking(live && (level > 0.04 || (voice.speaking && now - lastLoud < 600)));
+    }, 300);
     socket.on('disconnect', teardown);
     socket.on('connect', spawn);
     document.addEventListener('pointerdown', unlock);
@@ -290,6 +300,7 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
 
     return () => {
       clearInterval(timer);
+      clearInterval(speakTimer);
       socket.off('disconnect', teardown);
       socket.off('connect', spawn);
       document.removeEventListener('pointerdown', unlock);

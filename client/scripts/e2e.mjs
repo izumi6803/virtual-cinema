@@ -411,6 +411,19 @@ try {
     adminPage.status === 200 && (adminPage.headers.get('x-robots-tag') || '').includes('noindex'),
   );
 
+  const dupA = await connect(u1.token);
+  const joinDupA = await call(dupA, 'room:join', { theatreId: pub.data.theatre.id });
+  const replaced = new Promise((resolve) => dupA.on('room:kicked', resolve));
+  const dupB = await connect(u1.token);
+  const joinDupB = await call(dupB, 'room:join', { theatreId: pub.data.theatre.id });
+  const replacedPayload = await Promise.race([replaced, sleep(2000).then(() => null)]);
+  check(
+    'cùng tài khoản chỉ 1 chỗ trong rạp',
+    joinDupA.ok === true && joinDupB.ok === true && Boolean(replacedPayload),
+  );
+  dupA.disconnect();
+  dupB.disconnect();
+
   socket1.disconnect();
   socket3b.disconnect();
 } catch (error) {

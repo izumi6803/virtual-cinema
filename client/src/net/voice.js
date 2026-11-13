@@ -19,6 +19,7 @@ export class VoiceChat {
     this.connected = false;
     this.enabled = false;
     this.muted = false;
+    this.speaking = false;
     this.onPeersChanged = null;
 
     this.handleSignal = this.handleSignal.bind(this);
@@ -121,7 +122,7 @@ export class VoiceChat {
     this.micTrack.enabled = !this.muted;
     this.enabled = true;
     this.rebuildPeers();
-    this.socket.emit('voice:speaking', { speaking: true });
+    this.setSpeaking(false);
   }
 
   disableMic() {
@@ -138,8 +139,12 @@ export class VoiceChat {
     this.localSource = null;
     this.localAnalyser = null;
     this.enabled = false;
+    this.muted = false;
     this.rebuildPeers();
-    if (this.connected) this.socket.emit('voice:speaking', { speaking: false });
+    if (this.connected) {
+      this.socket.emit('voice:mute', { muted: false });
+      this.setSpeaking(false);
+    }
   }
 
   rebuildPeers() {
@@ -156,8 +161,15 @@ export class VoiceChat {
     if (this.micTrack) this.micTrack.enabled = !muted;
     if (this.connected && this.enabled) {
       this.socket.emit('voice:mute', { muted });
-      this.socket.emit('voice:speaking', { speaking: !muted });
+      if (muted) this.setSpeaking(false);
     }
+  }
+
+  setSpeaking(speaking) {
+    const next = Boolean(speaking);
+    if (next === this.speaking) return;
+    this.speaking = next;
+    if (this.connected) this.socket.emit('voice:speaking', { speaking: next });
   }
 
   signal(to, data) {
@@ -439,6 +451,7 @@ export class VoiceChat {
     this.enabled = false;
     this.connected = false;
     this.muted = false;
+    this.speaking = false;
 
     if (this.ctx) this.ctx.close().catch(() => {});
     this.ctx = null;

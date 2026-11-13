@@ -436,9 +436,10 @@ app.post('/api/account/password', requireAuth, (req, res) => {
 });
 
 app.post('/api/account/adult', requireAuth, (req, res) => {
-  store.updateUser(req.user.id, { adultConfirmed: Boolean(req.body?.confirmed) });
-  addAudit(req.user, 'adult_confirm', { confirmed: Boolean(req.body?.confirmed) });
-  res.json({ ok: true });
+  const confirmed = req.body?.confirmed === true;
+  store.updateUser(req.user.id, { adultConfirmed: confirmed });
+  addAudit(req.user, 'adult_confirm', { confirmed });
+  res.json({ ok: true, user: publicUser(store.findUserById(req.user.id)) });
 });
 
 /* --------------------------------------------------------------- Theatres */
@@ -951,6 +952,24 @@ io.on('connection', (socket) => {
     const existing = rooms.roomOf(socket.id);
     if (existing && existing.id !== theatre.id) leaveRoom(socket);
 
+    const targetRoom = rooms.getRoom(theatre.id);
+    const duplicate = targetRoom
+      ? [...targetRoom.users.values()].find(
+          (member) => member.accountId === user.id && member.id !== socket.id,
+        )
+      : null;
+    if (duplicate) {
+      const previous = io.sockets.sockets.get(duplicate.id);
+      if (previous) {
+        previous.emit('room:kicked', {
+          reason: 'Tài khoản đã được mở ở cửa sổ khác.',
+        });
+        previous.disconnect(true);
+      } else {
+        rooms.leave(duplicate.id);
+      }
+    }
+
     const result = rooms.join(theatre, user, socket.id);
     if (result.error) return reply(ack, { ok: false, error: result.error });
 
@@ -1035,8 +1054,14 @@ io.on('connection', (socket) => {
   });
 
   socket.on('voice:speaking', (payload) => {
-    const room = rooms.setVoice(socket.id, { speaking: Boolean(payload?.speaking) });
-    if (room) broadcast(room);
+    const room = rooms.roomOf(socket.id);
+    if (!room) return;
+    const member = room.users.get(socket.id);
+    if (!member || !member.voice) return;
+    const speaking = Boolean(payload?.speaking);
+    if (member.speaking === speaking) return;
+    const updated = rooms.setVoice(socket.id, { speaking });
+    if (updated) broadcast(updated);
   });
 
   socket.on('voice:leave', () => {
@@ -1045,7 +1070,8 @@ io.on('connection', (socket) => {
   });
 
   socket.on('voice:mute', (payload) => {
-    const room = rooms.setVoice(socket.id, { muted: Boolean(payload?.muted) });
+    const muted = Boolean(payload?.muted);
+    const room = rooms.setVoice(socket.id, muted ? { muted, speaking: false } : { muted });
     if (room) broadcast(room);
   });
 

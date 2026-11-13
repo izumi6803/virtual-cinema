@@ -78,5 +78,5 @@ export function useAuth() {
     if (current) api('/api/auth/logout', { method: 'POST', token: current }).catch(() => {});
   }, [clear]);
 
-  return { token, user, loading, login, register, logout };
+  return { token, user, loading, login, register, logout, updateUser: setUser };
 }
