@@ -38,6 +38,8 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
   const [transferEmail, setTransferEmail] = useState('');
   const [manageBusy, setManageBusy] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const canFullscreen =
+    typeof document !== 'undefined' && Boolean(document.documentElement.requestFullscreen);
   const [netState, setNetState] = useState('online');
   const [syncState, setSyncState] = useState('ok');
   const [dialogError, setDialogError] = useState('');
@@ -133,6 +135,23 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
     const onChange = () => setFullscreen(Boolean(document.fullscreenElement));
     document.addEventListener('fullscreenchange', onChange);
     return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return undefined;
+    const update = () => {
+      const offset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
+      document.documentElement.style.setProperty('--keyboard-offset', `${Math.round(offset)}px`);
+    };
+    viewport.addEventListener('resize', update);
+    viewport.addEventListener('scroll', update);
+    update();
+    return () => {
+      viewport.removeEventListener('resize', update);
+      viewport.removeEventListener('scroll', update);
+      document.documentElement.style.setProperty('--keyboard-offset', '0px');
+    };
   }, []);
 
   useEffect(() => {
@@ -766,7 +785,7 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
           </button>
           <button
             type="button"
-            className="icon-btn"
+            className="icon-btn hud__secondary"
             onClick={() => setSeatOpen(true)}
             title="Đổi ghế"
             aria-label="Đổi ghế"
@@ -776,7 +795,7 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
           </button>
           <button
             type="button"
-            className="icon-btn"
+            className="icon-btn hud__secondary"
             onClick={() => {
               setDialogError('');
               setReportOpen(true);
@@ -859,6 +878,7 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
         unread={unread}
         peopleCount={room.users.length}
         fullscreen={fullscreen}
+        canFullscreen={canFullscreen}
         onTogglePlay={togglePlay}
         onSeek={seekTo}
         onToggleMovieMute={toggleMovieMute}
@@ -1015,6 +1035,48 @@ export default function CinemaView({ initialRoom, token, user, onLeave }) {
             </div>
           </div>
         ) : null}
+
+        <div className="people__manage">
+          <h3>Tiện ích</h3>
+          <div className="dialog__actions">
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setPeopleOpen(false);
+                setSeatOpen(true);
+              }}
+            >
+              Đổi ghế
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                setPeopleOpen(false);
+                setDialogError('');
+                setReportOpen(true);
+              }}
+            >
+              Báo cáo rạp
+            </button>
+            <button type="button" className="btn" onClick={toggleMovieMute}>
+              {movieMuted ? 'Bật tiếng phim' : 'Tắt tiếng phim'}
+            </button>
+            {canFullscreen ? (
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  setPeopleOpen(false);
+                  toggleFullscreen();
+                }}
+              >
+                Toàn màn hình
+              </button>
+            ) : null}
+          </div>
+        </div>
 
         <div className="dialog__actions">
           <button type="button" className="btn" onClick={() => setPeopleOpen(false)}>

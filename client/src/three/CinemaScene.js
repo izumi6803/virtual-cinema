@@ -7,18 +7,23 @@ export class CinemaScene {
   constructor(canvas, handlers = {}) {
     this.canvas = canvas;
     this.handlers = handlers;
+    this.coarsePointer = Boolean(window.matchMedia?.('(pointer: coarse)').matches);
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: true,
+      antialias: !this.coarsePointer,
       powerPreference: 'high-performance',
     });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.setPixelRatio(
+      Math.min(window.devicePixelRatio || 1, this.coarsePointer ? 1.25 : 2),
+    );
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 0.95;
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.enabled = !this.coarsePointer;
+    if (!this.coarsePointer) {
+      this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    }
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x07070c);
@@ -171,6 +176,7 @@ export class CinemaScene {
   }
 
   handlePointerMove(event) {
+    if (this.coarsePointer) return;
     const seatId = this.pickSeat(event);
     if (seatId === this.hoveredSeat) return;
 

@@ -15,6 +15,7 @@ export default function ControlBar({
   unread = 0,
   peopleCount = 0,
   fullscreen = false,
+  canFullscreen = false,
   onTogglePlay,
   onSeek,
   onToggleMovieMute,
@@ -77,7 +78,7 @@ export default function ControlBar({
       <div className="dock__right">
         <button
           type="button"
-          className="dock-btn"
+          className="dock-btn dock-btn--volume"
           onClick={onToggleMovieMute}
           title={movieMuted ? 'Bật tiếng phim' : 'Tắt tiếng phim'}
           aria-label={movieMuted ? 'Bật tiếng phim' : 'Tắt tiếng phim'}
@@ -136,15 +137,17 @@ export default function ControlBar({
           ) : null}
         </button>
 
-        <button
-          type="button"
-          className={`dock-btn ${fullscreen ? 'is-active' : ''}`}
-          onClick={onToggleFullscreen}
-          title={fullscreen ? 'Thoát toàn màn hình' : 'Toàn màn hình'}
-          aria-label={fullscreen ? 'Thoát toàn màn hình' : 'Toàn màn hình'}
-        >
-          <Icon name={fullscreen ? 'compress' : 'expand'} />
-        </button>
+        {canFullscreen ? (
+          <button
+            type="button"
+            className={`dock-btn dock-btn--fullscreen ${fullscreen ? 'is-active' : ''}`}
+            onClick={onToggleFullscreen}
+            title={fullscreen ? 'Thoát toàn màn hình' : 'Toàn màn hình'}
+            aria-label={fullscreen ? 'Thoát toàn màn hình' : 'Toàn màn hình'}
+          >
+            <Icon name={fullscreen ? 'compress' : 'expand'} />
+          </button>
+        ) : null}
       </div>
     </footer>
   );

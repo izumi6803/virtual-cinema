@@ -862,12 +862,15 @@ app.patch('/api/admin/reports/:id', requireAuth, requireAdmin, (req, res) => {
   const report = store.data.reports.find((item) => item.id === req.params.id);
   if (!report) return res.status(404).json({ error: 'Không tìm thấy báo cáo.' });
   const status = req.body?.status === 'dismissed' ? 'dismissed' : 'resolved';
+  const reason = cleanText(req.body?.reason, 300);
   report.status = status;
   report.resolvedAt = Date.now();
   report.resolvedBy = req.user.email;
+  report.resolutionReason = reason;
   store.save();
   addAudit(req.user, status === 'resolved' ? 'report_resolve' : 'report_dismiss', {
     reportId: report.id,
+    reason,
   });
   res.json({ ok: true, report });
 });

@@ -737,7 +737,7 @@ export default function TheatreList({ auth, onEnter, initialCode = '' }) {
           </form>
         </aside>
 
-        <aside className="account-card">
+        <aside className="account-card" id="account">
           <h2>Tài khoản</h2>
           <p className="account-card__email">{user.email}</p>
           <div className="account-card__row">
@@ -786,6 +786,11 @@ export default function TheatreList({ auth, onEnter, initialCode = '' }) {
         </aside>
         </div>
       </div>
+
+      <nav className="mobile-bar" aria-label="Điều hướng nhanh">
+        <a href="#create">Tạo rạp</a>
+        <a href="#account">Tài khoản</a>
+      </nav>
 
       <Dialog
         open={!!dialog}

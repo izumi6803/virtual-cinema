@@ -96,6 +96,67 @@ const paths = {
       <path d="M7 17v3M17 17v3" />
     </>
   ),
+  dashboard: (
+    <>
+      <rect x="3" y="3" width="7" height="7" rx="1.4" />
+      <rect x="14" y="3" width="7" height="7" rx="1.4" />
+      <rect x="3" y="14" width="7" height="7" rx="1.4" />
+      <rect x="14" y="14" width="7" height="7" rx="1.4" />
+    </>
+  ),
+  inbox: (
+    <>
+      <path d="M4 5h16v14H4z" />
+      <path d="M4 13h5l2 3h2l2-3h5" />
+    </>
+  ),
+  clapperboard: (
+    <>
+      <path d="M4 9h16v11H4z" />
+      <path d="M4 9 6 5h14l-2 4" />
+      <path d="M10 9v11M16 9v11" />
+    </>
+  ),
+  radio: (
+    <>
+      <circle cx="12" cy="12" r="2" />
+      <path d="M4.9 4.9a10 10 0 0 0 0 14.2M19.1 4.9a10 10 0 0 1 0 14.2M7.8 7.8a6 6 0 0 0 0 8.4M16.2 7.8a6 6 0 0 1 0 8.4" />
+    </>
+  ),
+  history: (
+    <>
+      <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+      <path d="M3 3v5h5" />
+      <path d="M12 7v5l3 2" />
+    </>
+  ),
+  search: (
+    <>
+      <circle cx="11" cy="11" r="6" />
+      <path d="m20 20-4.5-4.5" />
+    </>
+  ),
+  menu: <path d="M4 6h16M4 12h16M4 18h16" />,
+  refresh: (
+    <>
+      <path d="M20 11a8 8 0 1 0-2.3 6.3" />
+      <path d="M20 4v7h-7" />
+    </>
+  ),
+  chevronDown: <path d="m6 9 6 6 6-6" />,
+  arrowLeft: (
+    <>
+      <path d="M19 12H5" />
+      <path d="m12 5-7 7 7 7" />
+    </>
+  ),
+  external: (
+    <>
+      <path d="M14 4h6v6" />
+      <path d="M20 4 10 14" />
+      <path d="M20 14v6H4V4h6" />
+    </>
+  ),
 };
 
 export function Icon({ name, size = 18 }) {
