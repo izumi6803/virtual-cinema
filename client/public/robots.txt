@@ -3,6 +3,7 @@ Allow: /
 Disallow: /admin
 Disallow: /api/
 Disallow: /socket.io/
+Disallow: /uploads/
 Disallow: /health
 
 Sitemap: https://virtual-cinema-cpat.onrender.com/sitemap.xml

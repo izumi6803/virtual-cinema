@@ -88,6 +88,7 @@ app.get('/health', (req, res) =>
     rooms: rooms.rooms.size,
   }),
 );
+app.get('/index.html', (req, res) => res.redirect(301, '/'));
 app.use(
   express.static(clientDist, {
     setHeaders(res, filePath) {
@@ -1226,7 +1227,7 @@ const dbFlusher = setInterval(() => {
 dbFlusher.unref?.();
 
 if (fs.existsSync(indexFile)) {
-  app.get(['/', '/index.html', '/admin', '/admin/'], (req, res) => res.sendFile(indexFile));
+  app.get(['/', '/admin', '/admin/'], (req, res) => res.sendFile(indexFile));
 }
 
 app.use((req, res) => {

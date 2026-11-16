@@ -19,7 +19,10 @@
       name="description"
       content="Mở rạp phim ảo trong trình duyệt: chọn ghế, xem phim đồng bộ, trò chuyện theo vùng và nghe giọng nói không gian cùng bạn bè."
     />
-    <meta name="robots" content="index,follow" />
+    <meta
+      name="robots"
+      content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1"
+    />
     <link rel="canonical" href="https://virtual-cinema-cpat.onrender.com/" />
 
     <meta property="og:type" content="website" />
@@ -32,6 +35,11 @@
     />
     <meta property="og:url" content="https://virtual-cinema-cpat.onrender.com/" />
     <meta property="og:image" content="https://virtual-cinema-cpat.onrender.com/og/og-1200x630.png" />
+    <meta
+      property="og:image:secure_url"
+      content="https://virtual-cinema-cpat.onrender.com/og/og-1200x630.png"
+    />
+    <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
     <meta property="og:image:alt" content="Rạp Ảo — rạp phim ảo trong trình duyệt" />
@@ -43,17 +51,63 @@
       content="Chọn ghế, xem phim đồng bộ, trò chuyện theo vùng và nghe giọng nói không gian cùng bạn bè."
     />
     <meta name="twitter:image" content="https://virtual-cinema-cpat.onrender.com/og/og-1200x630.png" />
+    <meta name="twitter:image:alt" content="Rạp Ảo — rạp phim ảo trong trình duyệt" />
 
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
         "@graph": [
           {
+            "@type": "Organization",
+            "@id": "https://virtual-cinema-cpat.onrender.com/#organization",
+            "name": "Rạp Ảo",
+            "alternateName": "Virtual Cinema",
+            "url": "https://virtual-cinema-cpat.onrender.com/",
+            "logo": {
+              "@type": "ImageObject",
+              "@id": "https://virtual-cinema-cpat.onrender.com/#logo",
+              "url": "https://virtual-cinema-cpat.onrender.com/icons/icon-512.png",
+              "width": 512,
+              "height": 512
+            }
+          },
+          {
             "@type": "WebSite",
             "@id": "https://virtual-cinema-cpat.onrender.com/#website",
             "url": "https://virtual-cinema-cpat.onrender.com/",
             "name": "Rạp Ảo",
-            "inLanguage": "vi"
+            "alternateName": "Virtual Cinema",
+            "description": "Mở rạp phim ảo trong trình duyệt: chọn ghế, xem phim đồng bộ, trò chuyện theo vùng và nghe giọng nói không gian cùng bạn bè.",
+            "inLanguage": "vi-VN",
+            "publisher": {
+              "@id": "https://virtual-cinema-cpat.onrender.com/#organization"
+            }
+          },
+          {
+            "@type": "ImageObject",
+            "@id": "https://virtual-cinema-cpat.onrender.com/#primaryimage",
+            "url": "https://virtual-cinema-cpat.onrender.com/og/og-1200x630.png",
+            "contentUrl": "https://virtual-cinema-cpat.onrender.com/og/og-1200x630.png",
+            "width": 1200,
+            "height": 630,
+            "caption": "Rạp Ảo — rạp phim ảo trong trình duyệt"
+          },
+          {
+            "@type": "WebPage",
+            "@id": "https://virtual-cinema-cpat.onrender.com/#webpage",
+            "url": "https://virtual-cinema-cpat.onrender.com/",
+            "name": "Rạp Ảo — Xem phim đồng bộ cùng nhau",
+            "description": "Mở rạp phim ảo trong trình duyệt: chọn ghế, xem phim đồng bộ, trò chuyện theo vùng và nghe giọng nói không gian cùng bạn bè.",
+            "inLanguage": "vi-VN",
+            "isPartOf": {
+              "@id": "https://virtual-cinema-cpat.onrender.com/#website"
+            },
+            "about": {
+              "@id": "https://virtual-cinema-cpat.onrender.com/#app"
+            },
+            "primaryImageOfPage": {
+              "@id": "https://virtual-cinema-cpat.onrender.com/#primaryimage"
+            }
           },
           {
             "@type": "WebApplication",
@@ -64,8 +118,24 @@
             "description": "Rạp phim ảo trong trình duyệt: chọn ghế, xem phim đồng bộ, trò chuyện theo vùng và nghe giọng nói không gian.",
             "applicationCategory": "EntertainmentApplication",
             "operatingSystem": "Web",
-            "inLanguage": "vi",
+            "browserRequirements": "Yêu cầu JavaScript để vào rạp.",
+            "inLanguage": "vi-VN",
             "isAccessibleForFree": true,
+            "isPartOf": {
+              "@id": "https://virtual-cinema-cpat.onrender.com/#website"
+            },
+            "publisher": {
+              "@id": "https://virtual-cinema-cpat.onrender.com/#organization"
+            },
+            "screenshot": {
+              "@id": "https://virtual-cinema-cpat.onrender.com/#primaryimage"
+            },
+            "featureList": [
+              "Xem phim đồng bộ theo thời gian thực",
+              "Chọn ghế và tương tác trong rạp 3D",
+              "Trò chuyện theo vùng và giọng nói không gian",
+              "Mời bạn bè bằng mã rạp"
+            ],
             "offers": {
               "@type": "Offer",
               "price": "0",

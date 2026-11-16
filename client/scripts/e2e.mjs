@@ -399,11 +399,22 @@ try {
 
   const robots = await fetch(`${BASE}/robots.txt`);
   const robotsText = await robots.text();
-  check('robots.txt + sitemap', robots.status === 200 && robotsText.includes('Sitemap:'));
+  check(
+    'robots.txt + sitemap',
+    robots.status === 200 &&
+      robotsText.includes('Sitemap:') &&
+      robotsText.includes('Disallow: /uploads/'),
+  );
 
   const sitemap = await fetch(`${BASE}/sitemap.xml`);
   const sitemapText = await sitemap.text();
-  check('sitemap.xml', sitemap.status === 200 && sitemapText.includes('<urlset'));
+  check(
+    'sitemap.xml',
+    sitemap.status === 200 &&
+      sitemapText.includes('<urlset') &&
+      sitemapText.includes('<lastmod>') &&
+      !sitemapText.includes('<changefreq>'),
+  );
 
   const home = await fetch(`${BASE}/`);
   const homeHtml = await home.text();
@@ -412,7 +423,16 @@ try {
     home.status === 200 &&
       homeHtml.includes('og:title') &&
       homeHtml.includes('application/ld+json') &&
-      homeHtml.includes('rel="canonical"'),
+      homeHtml.includes('rel="canonical"') &&
+      homeHtml.includes('max-image-preview:large') &&
+      homeHtml.includes('"Organization"') &&
+      homeHtml.includes('"WebPage"'),
+  );
+
+  const indexAlias = await fetch(`${BASE}/index.html`, { redirect: 'manual' });
+  check(
+    'index.html redirect 301',
+    indexAlias.status === 301 && (indexAlias.headers.get('location') || '') === '/',
   );
 
   const missingPage = await fetch(`${BASE}/khong-ton-tai`);
