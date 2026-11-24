@@ -41,3 +41,16 @@ Notes: numbers are from a single local process with the JSON store; they show
 server overhead, not production capacity. A room holds up to
 `MAX_ROOM_SIZE` viewers (default = 60, the seat count; override with the
 `MAX_ROOM_SIZE` env var, e.g. 30 to reduce WebRTC mesh pressure).
+
+## Lighthouse (deployed, mobile)
+
+Deployment: https://virtual-cinema-cpat.onrender.com
+
+| Category | Score |
+| --- | --- |
+| Performance | 83 |
+| Accessibility | 100 |
+| Best practices | 100 |
+| SEO | 100 |
+
+LCP 4.3 s / TBT 10 ms / CLS 0 on Render's free tier (cold start inflates LCP).
